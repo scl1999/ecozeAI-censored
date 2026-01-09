@@ -104,6 +104,190 @@ async function extractWithTika(url) {
 
 // -----------------------------------------------------------------------------
 
+async function factCheckerGPTOSS120b({
+  productId = null,
+  materialId = null,
+  urlsGiven = [],
+  cloudfunction,
+  systemInstructions,
+  prompt,
+  aiOutput,
+  outputStructure // New argument
+}) {
+  logger.info(`[factCheckerGPTOSS120b] Starting fact check for ${cloudfunction}...`);
+
+  // 1. Determine FactChecker Name (Sequential)
+  let factCheckerName = `${cloudfunction}FactChecker_1`;
+  try {
+    let collectionRef;
+    if (productId) {
+      collectionRef = db.collection("products_new").doc(productId).collection("pn_reasoning");
+    } else if (materialId) {
+      collectionRef = db.collection("materials").doc(materialId).collection("m_reasoning");
+    }
+
+    if (collectionRef) {
+      const prefix = `${cloudfunction}FactChecker_`;
+      const snapshot = await collectionRef
+        .where('cloudfunction', '>=', prefix)
+        .where('cloudfunction', '<=', prefix + '\uf8ff')
+        .select('cloudfunction')
+        .get();
+
+      let maxN = 0;
+      snapshot.forEach(doc => {
+        const cf = doc.data().cloudfunction;
+        if (cf && cf.startsWith(prefix)) {
+          const part = cf.substring(prefix.length);
+          const n = parseInt(part, 10);
+          if (!isNaN(n) && n > maxN) maxN = n;
+        }
+      });
+      factCheckerName = `${prefix}${maxN + 1}`;
+    }
+  } catch (err) {
+    logger.warn(`[factCheckerGPTOSS120b] Failed to determine sequential name, finding fallback...`, err);
+    factCheckerName = `${cloudfunction}FactChecker_${Date.now()}`;
+  }
+  logger.info(`[factCheckerGPTOSS120b] Assigned name: ${factCheckerName}`);
+
+  // 2. Extract Context with Tika
+  let urlContextTikka = "";
+  if (urlsGiven && urlsGiven.length > 0) {
+    const contextParts = [];
+    for (let i = 0; i < urlsGiven.length; i++) {
+      const url = urlsGiven[i];
+      if (!url) continue;
+      const content = await extractWithTika(url);
+      if (content && content.trim().length > 0) {
+        contextParts.push(`---------- URL ${i + 1} Content ----------\n${content.trim()}`);
+      }
+    }
+    urlContextTikka = contextParts.join("\n\n");
+  }
+
+  // 3. Prepare AI Inputs
+  const fcSystemInstructions = `
+Reasoning: high
+Your job is to take in the details of a task given to an AI. You must take in the information that the AI cited to back its claims and the answer of the AI. You must evaluate whether the AI's answer is supported by the cited information or not and / or it missed any information. If the AI has failed to provide an answer based on the cited data, you give it feedback on where it went wrong. Output your answer in the exact following format and no other text:
+
+${outputStructure}
+`;
+
+  const fcUserPrompt = `
+The System Instructions of the AI you are evaluating:
+${systemInstructions}
+
+The Prompt given to the AI you are evaluating:
+${prompt}
+
+The answer of the AI you are evaluating to the user's request:
+${aiOutput}
+
+Context from the URLs cited by the AI:
+${urlContextTikka}
+`;
+
+  const fcGenerationConfig = {
+    temperature: 0.2,
+    maxOutputTokens: 4096,
+    systemInstruction: { parts: [{ text: fcSystemInstructions }] },
+  };
+
+  // 4. Run AI
+  let fcAnswer = "";
+  let fcCost = 0;
+  let fcTokens = { input: 0, output: 0, toolCalls: 0 };
+  let fcModel = 'openai/gpt-oss-120b-maas';
+  let fcThoughts = "";
+  let fcRawConv = [];
+
+  try {
+    const res1 = await runGeminiStream({
+      model: fcModel,
+      generationConfig: fcGenerationConfig,
+      user: fcUserPrompt,
+    });
+    fcAnswer = res1.answer;
+    fcCost = res1.cost;
+    fcTokens = res1.totalTokens;
+    fcModel = res1.model;
+    fcThoughts = res1.thoughts;
+    fcRawConv = res1.rawConversation;
+  } catch (e) {
+    logger.error(`[factCheckerGPTOSS120b] Model execution failed: ${e.message}`);
+    return { aiFCAnswer: "System Error: AI execution failed." };
+  }
+
+  // 5. Check and Retry (Dynamic Check based on outputStructure)
+  // Extract keys starting with * from the structure to check if they exist in the answer
+  const expectedKeys = (outputStructure.match(/\*[a-zA-Z0-9_]+:/g) || []).map(k => k.replace('*', '').replace(':', ''));
+  let validationPassed = true;
+
+  if (expectedKeys.length > 0) {
+    for (const key of expectedKeys) {
+      if (!fcAnswer.includes(`*${key}:`)) {
+        validationPassed = false;
+        break;
+      }
+    }
+  }
+
+  if (!validationPassed) {
+    logger.warn(`[factCheckerGPTOSS120b] Dynamic format check failed for ${factCheckerName}. Retrying...`);
+    const retryPrompt = `Your answer did not follow the expected format. Please try again. You must output your answer in the exact following format and no other text:\n\n${outputStructure}`;
+
+    try {
+      const retryResult = await runGeminiStream({
+        model: fcModel,
+        generationConfig: fcGenerationConfig,
+        user: `${fcUserPrompt}\n\nPrevious Invalid Response:\n${fcAnswer}\n\n${retryPrompt}`
+      });
+
+      // Merge results
+      fcAnswer = retryResult.answer;
+      fcThoughts += `\n\n--- RETRY ---\n${retryResult.thoughts}`;
+      fcCost += retryResult.cost;
+      fcTokens.input += retryResult.totalTokens.input;
+      fcTokens.output += retryResult.totalTokens.output;
+      if (fcTokens.toolCalls && retryResult.totalTokens.toolCalls) fcTokens.toolCalls += retryResult.totalTokens.toolCalls;
+      fcRawConv.push(...retryResult.rawConversation);
+    } catch (e) {
+      logger.error(`[factCheckerGPTOSS120b] Retry failed: ${e.message}`);
+    }
+  }
+
+  // 6. Log Transaction & Reasoning
+  await logAITransaction({
+    cfName: factCheckerName,
+    productId,
+    materialId,
+    cost: fcCost,
+    totalTokens: fcTokens,
+    modelUsed: fcModel
+  });
+
+  await logAIReasoning({
+    sys: fcSystemInstructions,
+    user: fcUserPrompt,
+    thoughts: fcThoughts,
+    answer: fcAnswer,
+    cloudfunction: factCheckerName,
+    productId,
+    materialId,
+    rawConversation: fcRawConv
+  });
+
+  // 7. Return Value (Modified to return raw string as requested)
+  /*
+  5. The return value of the helper function needs to be:
+  aiFCAnswer (String) = {the answer of the fact checker AI}
+  */
+  return {
+    aiFCAnswer: fcAnswer
+  };
+}
+
 function harvestUrls(chunk, bucket) {
   // For streaming responses, all relevant metadata is on the candidate objects.
   if (!chunk.candidates || !Array.isArray(chunk.candidates)) {
@@ -3916,6 +4100,566 @@ exports.cf3 = onRequest({
     if (finalProductData.otherMetrics === true) {
       logger.info(`[cf3] otherMetrics flag is true for ${pRef.id}. Aggregating totals.`);
       const metricsSnap = await pRef.collection("c13").get();
+
+      const totals = { ap_total: 0, ep_total: 0, adpe_total: 0, gwp_f_total: 0, gwp_b_total: 0, gwp_l_total: 0 };
+      const fieldsToSum = [
+        { from: 'ap_value', to: 'ap_total' }, { from: 'ep_value', to: 'ep_total' },
+        { from: 'adpe_value', to: 'adpe_total' }, { from: 'gwp_f_value', to: 'gwp_f_total' },
+        { from: 'gwp_b_value', to: 'gwp_b_total' }, { from: 'gwp_l_value', to: 'gwp_l_total' },
+      ];
+
+      if (!metricsSnap.empty) {
+        metricsSnap.forEach(doc => {
+          const data = doc.data();
+          fieldsToSum.forEach(field => {
+            if (typeof data[field.from] === 'number' && isFinite(data[field.from])) {
+              totals[field.to] += data[field.from];
+            }
+          });
+        });
+      }
+      logger.info(`[cf3] Calculated totals for ${pRef.id}:`, totals);
+      Object.assign(finalUpdatePayload, totals);
+    }
+
+    await pRef.update(finalUpdatePayload);
+
+    res.json({ status: "ok", docId: productId });
+  } catch (err) {
+    logger.error("[cf3] Uncaught error:", err);
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+exports.cf3New = onRequest({
+  region: REGION,
+  timeoutSeconds: TIMEOUT,
+  memory: MEM,
+  secrets: SECRETS,
+}, async (req, res) => {
+  try {
+    const productId = (req.method === "POST" ? req.body?.productId : req.query.productId) || "";
+    if (!productId) {
+      res.status(400).json({ error: "productId required" });
+      return;
+    }
+    const pRef = db.collection("products_new").doc(productId);
+    const pSnap = await pRef.get();
+    if (!pSnap.exists) {
+      res.status(404).json({ error: `product ${productId} not found` });
+      return;
+    }
+
+    // Set start time
+    await pRef.update({ cf3StartTime: admin.firestore.FieldValue.serverTimestamp() });
+
+    logger.info(`[cf3] Calling apcfSupplierFinder for product ${productId}`);
+    await callCF("apcfSupplierFinder", { productId: productId });
+
+    logger.info(`[cf3] Calling apcfSupplierAddress for product ${productId}`);
+    await callCF("apcfSupplierAddress", { productId: productId });
+    logger.info(`[cf3] apcfSupplierAddress completed for product ${productId}`);
+
+    const pDoc = pSnap.data() || {};
+    let productName = pDoc.name || "(unknown product)";
+    if (pDoc.includePackaging === true) {
+      productName += " (Include Packaging)";
+    }
+    // Moved stop check to the top for a cleaner early exit.
+
+    let existingHistory;
+    try {
+      // The history is already in the correct format, just parse it.
+      existingHistory = JSON.parse(pDoc.z_ai_history || "[]");
+    } catch {
+      existingHistory = [];
+    }
+
+    const collectedUrls = new Set();
+
+    const promptLines = [`...`];
+    if (pDoc.mass && pDoc.mass_unit) {
+      promptLines.push(`...`);
+    }
+    if (pDoc.manufacturer_name) {
+      promptLines.push(`...`);
+    }
+    if (pDoc.description) {
+      promptLines.push(`...`);
+    }
+
+    const initialPrompt = promptLines.join('\n');
+
+    logger.info(`[cf3] Starting chat loop for product "${productName}"`);
+
+
+
+    const modelUsed = 'gemini-3-pro-bom'; //pro
+    const vGenerationConfig = {
+      temperature: 1,
+      maxOutputTokens: 65535, // Kept as per your instruction
+      systemInstruction: { parts: [{ text: BOM_SYS }] },
+      tools: [{ urlContext: {} }, { googleSearch: {} }],
+      thinkingConfig: {
+        includeThoughts: true,
+        thinkingBudget: 32768 // Kept as per your instruction
+      },
+    };
+
+    // ----------------------------------------------------------------------------------
+    // NEW: Customer Turn-based Loop with Nested Fact Checking & Dynamic Prompting
+    // ----------------------------------------------------------------------------------
+
+    logger.info(`[cf3] Starting CUSTOM chat loop for product "${productName}" with initial model ${modelUsed}`);
+
+    // --- State Initialization ---
+    let materialsRawList = "";
+    const foundMaterials = new Set();
+    const materialsNewListIds = [];
+    const accumulatedUrls = new Set();
+    const accumulatedWebQueries = new Set(); // NEW: Track queries
+    const rawChunksForSave = [];
+    const globalHistory = existingHistory || []; // Accumulate history for persistHistory
+
+    let turnCount = 0;
+    const MAX_TURNS = 25;
+    let lastReasoningCount = 0;
+
+    // Default Models
+    const MODEL_TURN_START = "gemini-3-pro-bom";
+    const MODEL_RETRY = "gemini-3-flash-preview";
+
+    // Loop
+    while (turnCount < MAX_TURNS) {
+      turnCount++;
+
+      // --- 1. Construct Prompt ---
+      let currentPrompt = "";
+      if (turnCount === 1) {
+        currentPrompt = initialPrompt;
+      } else {
+        const materialsStr = materialsRawList || "(No materials found yet)";
+        const urlsStr = Array.from(accumulatedUrls).join("\n") || "(No URLs used yet)";
+        const webQueriesStr = Array.from(accumulatedWebQueries).join("\n") || "(No web search queries performed yet)"; // NEW
+
+        currentPrompt = `${initialPrompt}\n\n-----\n\nMaterials Found So far:\n\n${materialsStr}\n\n-----\n\nURLs Used So Far (Dont revisit URLs):\n${urlsStr}\n\n-----\n\nWeb Search Queries Performed So Far (Dont repeat web search queries):\n${webQueriesStr}\n`;
+      }
+
+      // --- 2. Fact Check Loop (Max 2 Attempts) ---
+      let factCheckAttempt = 0;
+      let aiPassedFactCheck = false;
+      let currentTurnOutput = null;
+
+      let currentTurnReasoningPayload = null;
+      let currentTurnTransactionPayload = null;
+
+      let effectiveModel = MODEL_TURN_START;
+      let effectivePrompt = currentPrompt;
+
+      while (factCheckAttempt < 2 && !aiPassedFactCheck) {
+        factCheckAttempt++;
+
+        logger.info(`[cf3New] Turn ${turnCount} Attempt ${factCheckAttempt} | Model: ${effectiveModel}`);
+
+        const ai = getGeminiClient();
+        const chat = ai.chats.create({
+          model: effectiveModel,
+          history: [],
+          config: vGenerationConfig,
+        });
+
+        // 2a. Count & Generate
+        const { totalTokens: inTok } = await runWithRetry(() => ai.models.countTokens({
+          model: effectiveModel,
+          contents: [{ role: 'user', parts: [{ text: effectivePrompt }] }],
+          systemInstruction: { parts: [{ text: BOM_SYS }] }
+        }));
+
+        const streamResult = await runWithRetry(() => chat.sendMessageStream({ message: effectivePrompt }));
+
+        let answerThisAttempt = "";
+        let thoughtsThisAttempt = "";
+        let attemptUrls = new Set();
+        let rawChunksThisAttempt = [];
+        let queriesThisAttempt = new Set(); // NEW: Local query collection
+
+        for await (const chunk of streamResult) {
+          rawChunksThisAttempt.push(chunk);
+          harvestUrls(chunk, attemptUrls);
+
+          // NEW: Collect Web Queries
+          if (chunk.candidates && chunk.candidates.length > 0) {
+            const gm = chunk.candidates[0].groundingMetadata;
+            if (gm && gm.webSearchQueries && Array.isArray(gm.webSearchQueries)) {
+              gm.webSearchQueries.forEach(q => queriesThisAttempt.add(q));
+            }
+          }
+
+          if (chunk.candidates && chunk.candidates.length > 0) {
+            for (const candidate of chunk.candidates) {
+              if (candidate.content && candidate.content.parts) {
+                for (const part of candidate.content.parts) {
+                  if (part.text) answerThisAttempt += part.text;
+                }
+              }
+            }
+          }
+        }
+
+        const { totalTokens: outTok } = await runWithRetry(() => ai.models.countTokens({
+          model: effectiveModel,
+          contents: [{ role: 'model', parts: [{ text: answerThisAttempt }] }]
+        }));
+
+        // --- 3. Evaluate ---
+        // Path 1: No URLs (Retry 1)
+        if (attemptUrls.size === 0) {
+          logger.info(`[cf3New] Turn ${turnCount} Attempt ${factCheckAttempt}: No URLs found. Retrying.`);
+          effectivePrompt = "...";
+          effectiveModel = MODEL_RETRY;
+          continue;
+        }
+
+        // Path 2: URLs Found -> Fact Check
+        logger.info(`[cf3New] Turn ${turnCount} Attempt ${factCheckAttempt}: URLs found (${attemptUrls.size}). Running Fact Checker.`);
+
+        const fcStructure = `...`;
+        const allContextUrls = Array.from(new Set([...accumulatedUrls, ...attemptUrls]));
+        const fcResult = await factCheckerGPTOSS120b(BOM_SYS, effectivePrompt, answerThisAttempt, allContextUrls, fcStructure);
+        const fcRaw = fcResult.aiFCAnswer || "";
+
+        const hasErrors = /\*cmi_name_\d+:/.test(fcRaw) || /\*cmi_potentially_missed_\d+:/.test(fcRaw);
+
+        if (hasErrors) {
+          logger.warn(`[cf3New] Turn ${turnCount} Attempt ${factCheckAttempt}: Fact Check FAILED.`);
+          if (factCheckAttempt < 2) {
+            effectiveModel = MODEL_RETRY;
+            effectivePrompt = `
+Your answer has failed the fact check. You must try again - you have to use your url context and google search tools. Give the components / materials / ingredients again (even the ones that passed the fact check.
+
+Fact Checker Reasoning:
+${fcRaw}
+`;
+            continue;
+          } else {
+            currentTurnOutput = answerThisAttempt;
+            aiPassedFactCheck = false;
+          }
+        } else {
+          logger.info(`[cf3New] Turn ${turnCount} Attempt ${factCheckAttempt}: Fact Check PASSED.`);
+          aiPassedFactCheck = true;
+          currentTurnOutput = answerThisAttempt;
+        }
+
+        // --- Accepted (or Forced) ---
+        rawChunksForSave.push(...rawChunksThisAttempt);
+        attemptUrls.forEach(u => accumulatedUrls.add(u));
+        queriesThisAttempt.forEach(q => accumulatedWebQueries.add(q)); // NEW: Add queries to global set
+        globalHistory.push({ role: 'user', parts: [{ text: effectivePrompt }] });
+        globalHistory.push({ role: 'model', parts: [{ text: answerThisAttempt }] });
+
+        // Log Payloads
+        lastReasoningCount++;
+        const cfNameN = `cf3_${lastReasoningCount}`;
+
+        currentTurnReasoningPayload = {
+          sys: BOM_SYS,
+          user: effectivePrompt,
+          thoughts: thoughtsThisAttempt + (aiPassedFactCheck ? "" : "\n\n[WARNING] Failed Final Fact Check."),
+          answer: answerThisAttempt,
+          cloudfunction: cfNameN,
+          productId: productId,
+          rawConversation: [],
+        };
+
+        const { cost } = getModelPricing(effectiveModel, inTok, outTok);
+        currentTurnTransactionPayload = {
+          cfName: cfNameN,
+          productId: productId,
+          cost: cost,
+          totalTokens: inTok + outTok,
+          modelUsed: effectiveModel,
+          searchQueries: {}
+        };
+
+        break; // Break inner loop
+      }
+
+      // --- Log ---
+      if (currentTurnReasoningPayload && currentTurnTransactionPayload) {
+        await logAIReasoning(currentTurnReasoningPayload);
+        await logAITransaction(currentTurnTransactionPayload);
+      }
+
+      // --- Process ---
+      const parsedMaterials = parseBom(currentTurnOutput || "");
+
+      for (const p of parsedMaterials) {
+        const nextIndex = foundMaterials.size + 1;
+        const matBlock = `...`;
+        materialsRawList += matBlock;
+        foundMaterials.add(p.mat);
+
+        // Create Doc
+        const pDocMassInfo = (pDoc.mass && pDoc.mass_unit) ? ` [${pDoc.mass} ${pDoc.mass_unit}]` : "";
+        const pDocCfInfo = (typeof pDoc.supplier_cf === 'number') ? ` [official CF provided by the manufacturer / supplier = ${pDoc.supplier_cf} kgCO2e]` : "";
+
+        const parentInfoParts = [];
+        const parentSupplierName = pDoc.manufacturer_name || pDoc.supplier_name;
+        if (parentSupplierName) parentInfoParts.push(`[Supplier Name: ${parentSupplierName}]`);
+
+        if (pDoc.supplier_address && pDoc.supplier_address !== "Unknown") {
+          parentInfoParts.push(`...`);
+        } else if (pDoc.country_of_origin && pDoc.country_of_origin !== "Unknown") {
+          if (pDoc.coo_estimated === true) {
+            parentInfoParts.push(`...`);
+          } else {
+            parentInfoParts.push(`[Country of Origin: ${pDoc.country_of_origin}]`);
+          }
+        }
+        const parentInfoString = parentInfoParts.length > 0 ? ` ${parentInfoParts.join(' ')}` : "";
+        const newProductChain = `${pDoc.name}${pDocMassInfo}${pDocCfInfo}${parentInfoString} -> ${p.mat}`;
+
+        const newPmChain = [{
+          documentId: pRef.id,
+          material_or_product: "Product",
+          tier: 0
+        }];
+
+        const newMatRef = await db.collection("materials").add({
+          name: p.mat,
+          supplier_name: p.supp,
+          description: p.desc,
+          linked_product: pRef,
+          tier: 1,
+          mass: p.mass ?? null,
+          mass_unit: p.unit,
+          product_chain: newProductChain,
+          pmChain: newPmChain,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          estimated_cf: 0,
+          total_cf: 0,
+          transport_cf: 0,
+          apcfIMaterialsNum: 0,
+          completed_cf: false,
+          final_tier: false,
+          software_or_service: false,
+          apcfMaterials2_done: false,
+          apcfMassReview_done: false,
+          apcfMFSF_done: false,
+          apcfMSF_done: false,
+          apcfMM_done: false,
+          apcfBOM_done: false,
+          apcfMaterials_done: false,
+          apcfCFReview_done: false,
+          apcfMassFinder_done: p.mass !== null,
+          apcfSupplierFinder_done: p.supp.toLowerCase() !== 'unknown',
+          apcfMPCF_done: false,
+          apcfSupplierAddress_done: false,
+          apcfTransportCF_done: false,
+          apcfSupplierDisclosedCF_done: false,
+          apcfMaterials2_paused: false
+        });
+
+        materialsNewListIds.push(newMatRef.id);
+      }
+
+      await pRef.update({ apcfIMaterialsNum: foundMaterials.size });
+      logger.info(`[cf3New] Turn ${turnCount} Complete. Total: ${foundMaterials.size}`);
+
+      if (/DONE/i.test(currentTurnOutput) && parsedMaterials.length === 0) {
+        logger.info(`[cf3New] Turn ${turnCount}: AI signaled DONE.`);
+        break;
+      }
+    }
+
+    // --- Finalization ---
+
+    await saveURLs({
+      urls: Array.from(accumulatedUrls),
+      productId,
+      pBOMData: true,
+      cloudfunction: 'cf3'
+    });
+    await pRef.update({ apcfBOM_done: true });
+    await verifyMaterialLinks(materialsNewListIds, pRef);
+    await sleep(5000);
+
+    // Run Finders
+    logger.info(`[cf3] ...`);
+    const drMaterialIds = new Set();
+    try {
+      const drSnapshot = await db.collection("materials")
+        .where("linked_product", "==", pRef)
+        .orderBy("createdAt", "asc")
+        .limit(60)
+        .get();
+      drSnapshot.forEach(doc => drMaterialIds.add(doc.id));
+    } catch (err) {
+      logger.error(`[cf3] Failed to fetch DR material list: ${err.message}`);
+    }
+
+    const results = await Promise.allSettled(materialsNewListIds.map(async (mId) => {
+      try {
+        if (drMaterialIds.has(mId)) {
+          logger.info(`[cf3] Triggering apcfSupplierFinderDR (Deep Research) for ${mId}`);
+          await callCF("apcfx", { materialId: mId });
+        } else {
+          logger.info(`[cf3] Triggering apcfSupplierFinder (Standard) for ${mId}`);
+          await callCF("apcfy", { materialId: mId });
+        }
+
+        const mRef = db.collection("materials").doc(mId);
+        await mRef.update({ apcfSupplierFinder_done: true });
+        const data = (await mRef.get()).data() || {};
+        if ((data.supplier_name || "Unknown") === "Unknown") {
+          await mRef.update({ final_tier: true });
+        }
+        if (data.software_or_service !== true && data.apcfMassFinder_done !== true) {
+          try {
+            await callCF("apcfMassFinder", { materialId: mId });
+          } catch {
+            logger.warn(`[cf3] apcfMassFinder for ${mId} failed (ignored)`);
+          }
+        }
+      } catch (innerErr) {
+        logger.error(`[cf3] Error processing material ${mId}:`, innerErr);
+      }
+    }));
+
+    // Log results summary
+    const failures = results.filter(r => r.status === 'rejected');
+    if (failures.length > 0) {
+      logger.warn(`[cf3] ${failures.length} materials failed during processing, but batch continued.`);
+    }
+
+    logger.info(`[cf3] Finished initial finders.`);
+    await pRef.update({ apcfx: true });
+
+    // --- LEGACY LOGIC RESTORATION ---
+    logger.info(`[cf3] Triggering apcfMassReview for ${materialsNewListIds.length} materials.`);
+    await callCF("apcfMassReview", { materialsNewList: materialsNewListIds, productId: productId });
+    await pRef.update({ apcfx_done: true });
+
+    logger.info(`[cf3] Calling apcfMPCFProcessing for product ${productId}`);
+    await callCF("...", { productId: productId });
+
+    logger.info(`[cf3] Triggering ... for ${materialsNewListIds.length} materials.`);
+    await callCF("...", { materialsNewList: materialsNewListIds, productId: productId });
+    await pRef.update({ apcfx_done: true });
+
+    await persistHistory({ docRef: pRef, history: globalHistory, loop: (pDoc.ai_loop || 0) + 1, wipeNow: true });
+
+    /* ╔═══════════════ Post-loop clean-up ═══════════════╗ */
+    logger.info("[cf3] Loop finished.");
+
+    const matsSnap = await db.collection("materials").where("linked_product", "==", pRef).get();
+
+    /* De-duplicate materials (same logic as before) */
+    const groups = {};
+    matsSnap.forEach(doc => {
+      const key = (doc.get("name") || "").trim().toLowerCase();
+      (groups[key] = groups[key] || []).push({
+        id: doc.id,
+        supplier: (doc.get("supplier_name") || "").trim(),
+        ref: doc.ref,
+        createdAt: doc.get("createdAt") // Add this line
+      });
+    });
+
+    const TEN_MINUTES_MS = 10 * 60 * 1000;
+
+    for (const nameKey of Object.keys(groups)) {
+      const nameGroup = groups[nameKey];
+      if (nameGroup.length <= 1) continue;
+
+      // Sort the group by creation time
+      nameGroup.sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
+
+      let currentSubgroup = [];
+      for (const material of nameGroup) {
+        if (currentSubgroup.length === 0) {
+          currentSubgroup.push(material);
+          continue;
+        }
+
+        const firstTimestamp = currentSubgroup[0].createdAt.toMillis();
+        const currentTimestamp = material.createdAt.toMillis();
+
+        if (currentTimestamp - firstTimestamp <= TEN_MINUTES_MS) {
+          // It's a duplicate within the time window, add it to the current subgroup
+          currentSubgroup.push(material);
+        } else {
+          // Time window exceeded, process the completed subgroup
+          if (currentSubgroup.length > 1) {
+            const keeper = currentSubgroup[0];
+            const toMerge = currentSubgroup.slice(1);
+            const altSupp = toMerge.map(d => d.supplier).filter(Boolean);
+            const batch = db.batch();
+
+            if (altSupp.length) {
+              batch.update(keeper.ref, {
+                alternative_suppliers: admin.firestore.FieldValue.arrayUnion(...altSupp)
+              });
+            }
+            toMerge.forEach(d => batch.delete(d.ref));
+            await batch.commit();
+            logger.info(`[cf3] De-duplicated "${nameKey}" (time-windowed) - kept ${keeper.id}`);
+          }
+          // Start a new subgroup with the current material
+          currentSubgroup = [material];
+        }
+      }
+
+      // Process the last remaining subgroup after the loop finishes
+      if (currentSubgroup.length > 1) {
+        const keeper = currentSubgroup[0];
+        const toMerge = currentSubgroup.slice(1);
+        const altSupp = toMerge.map(d => d.supplier).filter(Boolean);
+        const batch = db.batch();
+
+        if (altSupp.length) {
+          batch.update(keeper.ref, {
+            alternative_suppliers: admin.firestore.FieldValue.arrayUnion(...altSupp)
+          });
+        }
+        toMerge.forEach(d => batch.delete(d.ref));
+        await batch.commit();
+        logger.info(`[cf3] De-duplicated "${nameKey}" (time-windowed) - kept ${keeper.id}`);
+      }
+    }
+
+    // --- Aggregate Uncertainty & Finalize ---
+    const uncertaintySnap = await pRef.collection("pn_uncertainty").get();
+    let uSum = 0;
+
+    if (!uncertaintySnap.empty) {
+      uncertaintySnap.forEach(doc => {
+        const uncertaintyValue = doc.data().co2e_uncertainty_kgco2e;
+        if (typeof uncertaintyValue === 'number' && isFinite(uncertaintyValue)) {
+          uSum += uncertaintyValue;
+        }
+      });
+    }
+    logger.info(`[cf3] Calculated total uncertainty for product ${pRef.id}: ${uSum}`);
+
+    // Combine final updates
+    const finalUpdatePayload = {
+      status: "Done",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      cf3_done: true,
+      cf3EndTime: admin.firestore.FieldValue.serverTimestamp(),
+      total_uncertainty: uSum, // Add the calculated sum
+    };
+
+    // Conditionally aggregate other metrics
+    const finalProductData = (await pRef.get()).data() || {};
+    if (finalProductData.otherMetrics === true) {
+      logger.info(`[cf3] otherMetrics flag is true for ${pRef.id}. Aggregating totals.`);
+      const metricsSnap = await pRef.collection("pn_otherMetrics").get();
 
       const totals = { ap_total: 0, ep_total: 0, adpe_total: 0, gwp_f_total: 0, gwp_b_total: 0, gwp_l_total: 0 };
       const fieldsToSum = [
