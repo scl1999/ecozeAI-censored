@@ -5,13 +5,13 @@ Stack: Node.js, Python, Google Cloud Platform (GCP), Vertex AI, OpenAI, Firebase
 Overview
 This repository contains a sanitised snapshot of the core architecture behind ecozeAI, an autonomous supply chain analysis engine.
 
-Unlike standard "chatbot" wrappers, this system is a headless, event-driven agentic infrastructure designed to perform "Deep Research" tasks without human intervention. It currently powers sustainability audits for enterprise clients (including KPMG and Capgemini), automating the creation of ISO-compliant Product Carbon Footprints (PCFs).
+Unlike standard "chatbot" wrappers, this system is a headless, event-driven agentic infrastructure designed to perform "Deep Research" tasks without human intervention. It currently powers sustainability audits for enterprise clients, automating the creation of ISO-compliant Product Carbon Footprints (PCFs).
 
 What This Code Demonstrates
 This codebase is an example of "Production-Grade AI". It solves the hard problems that stop AI demos from becoming enterprise products:
 
 Self-Healing Resilience: It doesn't crash when APIs fail. Custom retry logic with exponential backoff handles rate limits (429) and service outages (500) gracefully.
-Cost Governance (FinOps): It tracks token usage in real-time. The system utilises Model Cascading—dynamically downgrading from expensive reasoning models (e.g., Gemini 1.5 Pro) to faster models (Flash) based on task complexity to protect margins.
+Cost Governance (FinOps): It tracks token usage in real-time. The system utilises Model Cascading—dynamically downgrading from expensive reasoning models to faster models based on task complexity to protect margins.
 Auditability & Provenance: In regulated industries, AI cannot hallucinate. This architecture traces every generated fact back to a specific source URL, saving the evidence trail to Firestore for audit compliance.
 Polyglot Architecture: Demonstrates orchestration in Node.js (for scalable, serverless event handling) and specialised agent logic in Python (for data-heavy reasoning).
 
