@@ -2,10 +2,10 @@
 set -e
 
 # Configuration
-PROJECT_ID="ecoze-f216c"
+PROJECT_ID="..."
 REGION="us-central1"
 AGENT_NAME="supplier_finder"
-AGENT_DIR="$HOME/ecoze-firebase/eai-agents/supplier_finder"
+AGENT_DIR="$HOME/..."
 
 # Ensure we are in the agent directory
 cd "$AGENT_DIR"

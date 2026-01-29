@@ -12,7 +12,7 @@ os.environ["GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY"] = "true"
 # Do not disable OTEL SDK - needed for --trace_to_cloud to work
 # If SSL errors return, we'll handle them differently
 
-os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "ecoze-f216c")
+os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "...")
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
 # Set location to global to support gemini-3-pro-preview via global endpoint

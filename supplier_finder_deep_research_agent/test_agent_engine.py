@@ -5,9 +5,9 @@ import requests
 import json
 
 # Configuration
-PROJECT_ID = "ecoze-f216c"
+PROJECT_ID = "..."
 LOCATION = "europe-west2"
-AGENT_ID = "4491601756488204288"
+AGENT_ID = "..."
 
 def test_agent_engine():
     print(f"Testing Agent Engine: {AGENT_ID}")

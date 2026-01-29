@@ -3,9 +3,9 @@ from google.auth.transport.requests import Request
 import requests
 import json
 
-PROJECT_ID = "ecoze-f216c"
-LOCATION = "europe-west2"
-ACTIVE_AGENT_ID = "8726111306123313152"
+PROJECT_ID = "..."
+LOCATION = "..."
+ACTIVE_AGENT_ID = "..."
 
 def cleanup_agents():
     credentials, project = google.auth.default()
