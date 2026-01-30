@@ -1,21 +1,27 @@
+const { logger } = require('../../config/firebase');
+const { calculateCost } = require('./costs');
+const { createInteraction, parseNDJSON } = require('./interactionsapi');
+const { getGeminiClient, runOpenModelStream } = require('./gemini');
+const { runWithRetryI } = require('../../utils/network');
+const { getFormattedDate } = require('../../utils/time');
+
 async function runAIChat({
   interactionId, // identifying the PREVIOUS interaction to continue from, if any
   prompt,
   systemInstructions,
-  model = "gemini-2.5-flash",
+  model = "aiModel",
   temperature,
   maxOutputTokens, // interactions.create config?
   thinkingLevel, // interactions.create config?
   tools // tools config
 }) {
 
-  const actualModel = model || "gemini-2.5-flash";
+  const actualModel = model || "aiModel";
 
   // 1. Handle OpenAI/DeepSeek models via the compatible client
   // Adapter for unsupported models in Interactions API
   if (actualModel.startsWith("gpt-oss") || actualModel.startsWith("openai/") || actualModel.startsWith("deepseek/")) {
-    const { getFormattedDate } = require('./utils'); // Ensure imported if needed, or assume global as per context. Actually getFormattedDate seems global in this file.
-    const dateStr = (typeof getFormattedDate === 'function') ? getFormattedDate() : new Date().toISOString();
+    const dateStr = getFormattedDate();
     const effectiveUser = `[Today is ${dateStr}]\n\n${prompt}`;
     return await runOpenModelStream({ model: actualModel, generationConfig: { temperature, maxOutputTokens }, user: effectiveUser });
   }
@@ -150,7 +156,7 @@ async function runChatLoop({
   let totalOutputTks = 0;
   let totalToolCallTks = 0;
   let totalGroundingCost = 0;
-  const GROUNDING_COST_PER_PROMPT = 0.035;
+  const GROUNDING_COST_PER_PROMPT = "...".035;
   const allRawChunks = [];
   const allTurnsForLog = [];
 
@@ -181,7 +187,7 @@ async function runChatLoop({
   }
 
   const dateStr = getFormattedDate();
-  let currentPrompt = `[Today is ${dateStr}]\n\n${initialPrompt}`;
+  let currentPrompt = "...";
   const allAnswers = [];
 
   for (let i = 0; i <= maxFollowUps; i++) {
@@ -195,8 +201,8 @@ async function runChatLoop({
     const { totalTokens: currentInputTks } = await runWithRetry(() => ai.models.countTokens({
       model,
       contents: currentTurnPayload,
-      systemInstruction: generationConfig.systemInstruction, // System prompt is part of every call
-      tools: generationConfig.tools, // Tools are part of every call
+//
+//
     }));
     totalInputTks += currentInputTks || 0;
 
@@ -317,9 +323,9 @@ async function runChatLoop({
     logger.info("----------------------------------------------\n");
 
     // Check if "Done" is present at the end
-    const containsDone = /(?:^|\n)\s*done[.!]*\s*$/i.test(trimmedAnswer);
+    const containsDone = /.*/.test(trimmedAnswer);
     // Check if there are new materials in the response
-    const hasNewMaterials = /\*tier1_material_name_\d+:/i.test(trimmedAnswer);
+    const hasNewMaterials = /.*/.test(trimmedAnswer);
 
     // Only consider it "done" if "Done" is present AND there are no new materials
     const isDone = containsDone && !hasNewMaterials;
@@ -494,3 +500,221 @@ async function runPromisesInParallelWithRetry(
     logger.error(`[runPromisesInParallelWithRetry] CRITICAL: Failed to execute ${remainingFactories.length} promises after ${maxRetries} attempts.`);
   }
 }
+const { sleep } = require('../../utils/time');
+const { runGeminiStream } = require('./gemini');
+const { logAITransaction, logAIReasoning } = require('./costs');
+const { saveURLs } = require('./urls');
+const { db } = require('../../config/firebase');
+
+async function productDescription({ productId = null, materialId = null }) {
+  logger.info(`[productDescription] Starting productDescription for productId: ${productId}, materialId: ${materialId}`);
+
+  let pmDocRef, pmDocData;
+  if (productId) {
+    pmDocRef = db.collection("products_new").doc(productId);
+  } else if (materialId) {
+    pmDocRef = db.collection("materials").doc(materialId);
+  } else {
+    logger.error("[productDescription] No productId or materialId provided.");
+    return;
+  }
+
+  const snap = await pmDocRef.get();
+  if (!snap.exists) {
+    logger.error(`[productDescription] Document not found: ${pmDocRef.path}`);
+    return;
+  }
+  pmDocData = snap.data();
+  const pmName = pmDocData.name;
+  if (!pmName) {
+    logger.error(`[productDescription] Document has no name field: ${pmDocRef.path}`);
+    return;
+  }
+
+  const model = "aiModel";
+  const cfName = "productDescription";
+
+  // --- Step 1: First AI Call (Research) ---
+  const sys1 = `Your job is to take in a product name and research the product. You will be constructing a detailed description of what the product is and does, including what it is made from.
+
+!! You MUST use your google search and url context tools to ground your answer on the most up to date information. !!
+
+Output your answer in the exact following format and no other text:
+"
+Description: 
+[the description of the product]
+"`;
+
+  const config1 = {
+//
+//
+//
+//
+//
+      includeThoughts: true,
+      thinkingLevel: "HIGH"
+    }
+  };
+
+  const urls1 = new Set();
+  const res1 = await runGeminiStream({
+    model,
+    generationConfig: config1,
+    user: pmName,
+    collectedUrls: urls1
+  });
+
+  const descriptionOriginalRaw = res1.answer.trim();
+  const descMatch1 = descriptionOriginalRaw.match(/.*/);
+  const descriptionOriginal = descMatch1 ? descMatch1[1].trim() : descriptionOriginalRaw;
+
+  await logAITransaction({
+    cfName,
+    productId,
+    materialId,
+    cost: res1.cost,
+    totalTokens: res1.totalTokens,
+    modelUsed: res1.model
+  });
+  await logAIReasoning({
+    sys: sys1,
+    user: pmName,
+    thoughts: res1.thoughts,
+    answer: res1.answer,
+    cloudfunction: cfName,
+    productId,
+    materialId,
+    rawConversation: res1.rawConversation
+  });
+
+  if (urls1.size > 0) {
+    await saveURLs({
+      urls: Array.from(urls1),
+      productId,
+      materialId,
+      cloudfunction: cfName
+    });
+  }
+
+  // --- Step 2: Second AI Call (Fact Check) ---
+  const sys2 = `Your job is to take in a product name and a description of the product. You must fact check the description and create a new description where necessary.
+
+!! You MUST use your google search and url context tools to ground your answer on the most up to date information. !!
+
+Output your answer in the exact following format and no other text:
+"
+*pass_or_fail: [Set as "Pass" and no other text if the description doesnt need changing, set as "Fail" if the description needs changing.]
+*description: [Set to "..." if the description passed. If the description didnt pass, output the complete new description here.]
+"`;
+
+  const prompt2 = "...";
+
+  const config2 = {
+//
+//
+//
+//
+//
+      includeThoughts: true,
+      thinkingLevel: "HIGH"
+    }
+  };
+
+  const urls2 = new Set();
+  const res2 = await runGeminiStream({
+    model,
+    generationConfig: config2,
+    user: prompt2,
+    collectedUrls: urls2
+  });
+
+  await logAITransaction({
+    cfName,
+    productId,
+    materialId,
+    cost: res2.cost,
+    totalTokens: res2.totalTokens,
+    modelUsed: res2.model
+  });
+  await logAIReasoning({
+    sys: sys2,
+    user: prompt2,
+    thoughts: res2.thoughts,
+    answer: res2.answer,
+    cloudfunction: cfName,
+    productId,
+    materialId,
+    rawConversation: res2.rawConversation
+  });
+
+  if (urls2.size > 0) {
+    await saveURLs({
+      urls: Array.from(urls2),
+      productId,
+      materialId,
+      cloudfunction: cfName
+    });
+  }
+
+  const ai2Answer = res2.answer.trim();
+  const passMatch = ai2Answer.match(/.*/);
+  const passOrFail = passMatch ? passMatch[1].trim() : "Fail";
+
+  const descMatch2 = ai2Answer.match(/.*/);
+  const descriptionNew = descMatch2 ? descMatch2[1].trim() : "...";
+
+  let descriptionToAppend = (passOrFail === "Pass") ? descriptionOriginal : descriptionNew;
+
+  const currentDescription = pmDocData.description || "";
+  let finalDescription = (!currentDescription || currentDescription.trim() === "")
+    ? descriptionToAppend
+    : `${currentDescription}\n\n-----\n\n${descriptionToAppend}`;
+
+  await pmDocRef.update({ description: finalDescription });
+  logger.info(`[productDescription] Successfully updated description for ${pmDocRef.path}. PassOrFail: ${passOrFail}`);
+}
+
+async function callCF(name, body) {
+  const { fetch } = require('../../config/firebase');
+  const url = `https://ecozeAIRegion-projectId.cloudfunctions.net/${name}`;
+  const maxRetries = 1;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const rsp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+
+      if (!rsp.ok) {
+        const err = new Error(`[callCF] ${name} → received non-ok status ${rsp.status}`);
+        err.status = rsp.status;
+        throw err;
+      }
+
+      const txt = await rsp.text();
+      logger.info(`[callCF] ${name} → status ${rsp.status}`);
+      return txt.trim();
+    } catch (err) {
+      const isNetworkError = err.code === "ECONNRESET" || err.code === "ETIMEDOUT";
+      const isRetriableHttpError = err.status && [500, 502, 503].includes(err.status);
+
+      logger.warn(`[callCF] attempt ${attempt}/${maxRetries} calling ${name} failed:`, err.message);
+
+      if (attempt < maxRetries && (isNetworkError || isRetriableHttpError)) {
+        await sleep(500 * attempt);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+module.exports = {
+  runAIChat,
+  runAIDeepResearch,
+  runPromisesInParallelWithRetry,
+  productDescription,
+  callCF
+};

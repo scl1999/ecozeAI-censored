@@ -3,7 +3,7 @@ async function getOpenAICompatClient() {
   const auth = new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
   const token = await auth.getAccessToken();
   logger.info("[getOpenAICompatClient] Successfully retrieved fresh auth token.");
-  const baseURL = `https://aiplatform.googleapis.com/v1/projects/${process.env.GCP_PROJECT_ID || '...'}/locations/global/endpoints/openapi`;
+  const baseURL = `https://aiplatform.googleapis.com/v1/projects/${process.env.GCP_PROJECT_ID || 'projectId'}/locations/global/endpoints/openapi`;
 
   return new OpenAI({
     baseURL: baseURL,
@@ -16,7 +16,7 @@ async function countOpenModelTokens({ model, messages }) {
   try {
     const ai = getGeminiClient();
     const contents = messages.map(msg => ({ role: 'user', parts: [{ text: msg.content }] }));
-    const { totalTokens } = await ai.models.countTokens({ model: 'gemini-2.5-flash', contents });
+    const { totalTokens } = await ai.models.countTokens({ model: 'aiModel', contents });
     return totalTokens;
   } catch (err) {
     logger.warn(`[countOpenModelTokens] Could not count tokens for ${model}:`, err.message);
@@ -43,7 +43,7 @@ async function runOpenModelStream({ model, generationConfig, user }) {
     model,
     messages,
     stream: true,
-    temperature: generationConfig.temperature ?? 1.0,
+//
     max_tokens: generationConfig.maxOutputTokens ?? 32768,
   };
   logger.info("[runOpenModelStream] Sending request to OpenAI compatible endpoint:", { payload: requestPayload });
@@ -76,7 +76,7 @@ async function runOpenModelStream({ model, generationConfig, user }) {
   const finalAnswer = answer.trim();
 
   // ADDED: A regex to find and remove the unwanted artifact strings
-  const artifactRegex = /<\|start\|>assistant.*?<\|call\|>assistant/gi;
+  const artifactRegex = /.*/;
   const cleanedAnswer = finalAnswer.replace(artifactRegex, '').trim();
 
   // 5. Count output tokens and calculate final cost
@@ -114,22 +114,14 @@ async function runGptOssFactCheckSF({ generatedReasoning, cleanUrls, model = 'gp
     const content = await extractWithTika(url);
     if (!content || content.trim().length < 50) return null; // Skip empty/failed
 
-    const sysMsg = `Your job is to take in an AIs reasoning and a single source's / url's content for its task in finding the supplier(s) for a specific product / component / material / ingredient. You must determine and explain if the url / source provided relevant information for the AI's task. If so, give us a detailed description on the information that is useful.
+    const sysMsg = "..."s / url's content for its task in finding the supplier(s) for a specific product / component / material / ingredient. You must determine and explain if the url / source provided relevant information for the AI's task. If so, give us a detailed description on the information that is useful.
 
 Output your response in the exact following format and no other text:
 
 *url_source_useful: [Set to "True" and no other text if the url / source contained useful information, set to "False" and no other text if otherwise.]
 *description: [a detailed description on the useful information contained in the source / url. Just set to "N/A" and no other text if the url / source was not useful.]`;
 
-    const prompt = `Here is the AIs full conversation:
---- START OF AI CONVERSATION LOG ---
-
-${generatedReasoning}
-
---- END OF AI CONVERSATION LOG ---
-
-Here is the content of the url / source:
-${content.substring(0, 100000)}... [TRUNCATED]`;
+    const prompt = "...";
 
     let result = null;
     let attempts = 0;
@@ -171,19 +163,7 @@ ${content.substring(0, 100000)}... [TRUNCATED]`;
   }
 
   // 2. Final Fact Check Aggregation
-  const finalSysMsg = `Your job is to take in an AIs reasoning and sources for its task in finding the supplier(s) for a specific product / component / material / ingredient. You must fact check its response based on the data sources / URLs it used only. Note, the sources have already been summarised by AI helpers - you will receive their responses in the prompt. Rate the main AIs response with one of the following:
-
-1. Direct Proof
-Definition: The sources explicitly name the supplier as the manufacturer of this specific product model or component.
-
-2. Strong Inference
-Definition: The sources do not explicitly name the supplier for this exact SKU, but provide evidence that makes it the only logical conclusion.
-
-3. Probable / General Partner
-Definition: The supplier is a known major partner for the brand in this category, but no specific document links them to this exact product.
-
-4. Weak / Speculative
-Definition: The connection is based on general market share, rumors, outdated information, or "best guess".
+  const finalSysMsg = "..."best guess".
 
 5. No Evidence
 Definition: The AI provided a supplier name but the cited sources do not mention the supplier, or the AI explicitly stated "Unknown".
@@ -200,17 +180,7 @@ Return your answer in the exact following format and no other text:
 *rating_N: ["Direct Proof", "Strong Inference", "Probable / General Partner", "Weak / Speculative" or "No Evidence" and no other text]
 *rating_reasoning_N: [A paragraph explaining your reasoning as if you were addressing the AI directly]`;
 
-  const finalPrompt = `Here is the AIs full conversation:
---- START OF AI CONVERSATION LOG ---
-
-${generatedReasoning}
-
---- END OF AI CONVERSATION LOG ---
-
-Here are the sources:
---- START OF AI Source analyser responses---
-
-${analysisResults.join('\n\n')}
+  const finalPrompt = "..."\n\n')}
 
 --- END  ---`;
 
@@ -223,7 +193,17 @@ ${analysisResults.join('\n\n')}
       const { answer } = await runOpenModelStream({
         model,
         generationConfig: { temperature: 0.1 },
-        user: attempts === 1 ? finalPrompt : `...`
+        user: attempts === 1 ? finalPrompt : `You did not return your result in the desired format. You must output your response in the exact following format and no other text:
+"
+*supplier_1: [the name of the 1st supplier exactly as the AI gave us]
+*rating_1: ["Direct Proof", "Strong Inference", "Probable / General Partner", "Weak / Speculative" or "No Evidence" and no other text]
+*rating_reasoning_1: [A paragraph explaining your reasoning as if you were addressing the AI directly.]
+
+[...Repeat for any other suppliers given (if any given)]
+*supplier_N: [the name of the Nth supplier exactly as the AI gave us]
+*rating_N: ["Direct Proof", "Strong Inference", "Probable / General Partner", "Weak / Speculative" or "No Evidence" and no other text]
+*rating_reasoning_N: [A paragraph explaining your reasoning as if you were addressing the AI directly]
+"`
       });
 
       // Check if it looks roughly right

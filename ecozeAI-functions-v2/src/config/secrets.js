@@ -1,1 +1,5 @@
-//placeholder for formatting/loading environment keys
+const SECRETS = [
+  "..."
+];
+
+module.exports = { SECRETS };

@@ -1,10 +1,13 @@
+const { admin, db, logger, GoogleGenAI } = require('../../config/firebase');
+const { calculateCost } = require('./costs');
+
 let geminiCli;
 function getGeminiClient() {
   if (!geminiCli) {
     // This initializes the client for Vertex AI.
     geminiCli = new GoogleGenAI({
       vertexai: true,
-      project: process.env.GCP_PROJECT_ID || '...',
+      project: process.env.GCP_PROJECT_ID || 'projectId',
       location: 'global',
       apiVersion: 'v1beta1',
     });
@@ -25,7 +28,7 @@ async function runGeminiWithModelEscalation({
   logger.info(`[ModelEscalation] Attempting with primary model: ${primaryModel}`);
   const primaryGenConfig = {
     ...generationConfig,
-    thinkingConfig: { ...generationConfig.thinkingConfig, thinkingBudget: 24576 },
+//
   };
   const primaryResult = await runGeminiStream({
     model: primaryModel,
@@ -63,7 +66,7 @@ async function runGeminiWithModelEscalation({
 
   const secondaryGenConfig = {
     ...generationConfig,
-    thinkingConfig: { ...generationConfig.thinkingConfig, thinkingBudget: 32768 },
+//
   };
 
   const secondaryResult = await runGeminiStream({
@@ -108,6 +111,13 @@ async function runGeminiWithModelEscalation({
     rawConversation: combinedRawConversation,
   };
 }
+
+module.exports = {
+  getGeminiClient,
+  runGeminiWithModelEscalation,
+  runGeminiStream,
+  logFullConversation
+};
 
 async function runGeminiStream({
   model,
@@ -173,9 +183,9 @@ async function runGeminiStream({
   // 2. Calculate Input Tokens
   const { totalTokens: inputTks } = await runWithRetry(() => ai.models.countTokens({
     model,
-    systemInstruction: finalConfig.systemInstruction,
+//
     contents,
-    tools: finalConfig.tools,
+//
   }));
 
   return await runWithRetry(async () => {
@@ -270,7 +280,7 @@ async function runGeminiStream({
 
     // Add specific cost logic for Gemini 3 if pricing differs (placeholder for now)
     let cost = calculateCost(model, tokens);
-    const GROUNDING_COST_PER_PROMPT = 0.014;
+    const GROUNDING_COST_PER_PROMPT = "...".014;
 
     if (collectedQueries.size > 0) {
       cost += GROUNDING_COST_PER_PROMPT;
@@ -289,7 +299,7 @@ async function runGeminiStream({
 }
 
 async function runGeminiStreamBrowserUse({
-  model = 'gemini-2.5-flash',
+  model = 'aiModel',
   generationConfig,
   user,
   productId,
@@ -307,8 +317,8 @@ async function runGeminiStreamBrowserUse({
   // Update generation config with new system prompt and tools
   const orchestratorConfig = {
     ...generationConfig,
-    systemInstruction: { parts: [{ text: sys }] },
-    tools: [
+//
+//
       ...(generationConfig.tools || []),
       { functionDeclarations: [URL_FINDER_DECLARATION, BROWSER_USE_DECLARATION, URL_ANALYSE_DECLARATION] }
     ]
@@ -339,8 +349,8 @@ async function runGeminiStreamBrowserUse({
     const { totalTokens: inputTks } = await runWithRetry(() => ai.models.countTokens({
       model,
       contents: history,
-      systemInstruction: orchestratorConfig.systemInstruction,
-      tools: orchestratorConfig.tools,
+//
+//
     }));
     totalInputTks += inputTks || 0;
 
@@ -413,7 +423,7 @@ async function runGeminiStreamBrowserUse({
 
           // Extract URLs from browser use result text
           // Look for http/https links in the text result
-          const urlRegex = /(https?:\/\/[^\s]+)/g;
+          const urlRegex = /.*/;
           const foundUrls = toolResult.match(urlRegex);
           if (foundUrls) {
             foundUrls.forEach(u => collectedUrls.add(u));
@@ -483,3 +493,9 @@ async function runGeminiStreamBrowserUse({
     rawConversation: history
   };
 }
+module.exports = {
+  getGeminiClient,
+  runGeminiWithModelEscalation,
+  runGeminiStream,
+  runOpenModelStream
+};

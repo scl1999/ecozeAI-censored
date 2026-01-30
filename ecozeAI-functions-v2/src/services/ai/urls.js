@@ -1,3 +1,7 @@
+const { admin, db, logger, fetch } = require('../../config/firebase');
+const { VERTEX_REDIRECT_RE } = require('../../config/constants');
+const { runWithRetry } = require('../../utils/network');
+
 async function isValidUrl(url) {
   try {
     const res = await fetch(url, { method: "HEAD", timeout: 5000 });
@@ -58,12 +62,12 @@ function harvestFallbackTextUrls(chunk, bucket) {
       candidate.content.parts.forEach(part => {
         if (part.text) {
           // Regex to capture https URLs
-          const urlRegex = /https?:\/\/[^\s)"']+/g;
+          const urlRegex = /.*/;
           const matches = part.text.match(urlRegex);
           if (matches) {
             matches.forEach(url => {
               // Basic cleaning of trailing punctuation
-              let clean = url.replace(/[.,;>]+$/, '');
+              let clean = url.replace(/.*/, '');
               bucket.add(clean);
             });
           }
@@ -81,12 +85,12 @@ function harvestUrls(chunk, bucket) {
 function harvestUrlsFromText(text, bucket) {
   if (!text || typeof text !== 'string') return;
   // Regex to capture https URLs
-  const urlRegex = /https?:\/\/[^\s)"']+/g;
+  const urlRegex = /.*/;
   const matches = text.match(urlRegex);
   if (matches) {
     matches.forEach(url => {
       // Basic cleaning of trailing punctuation often caught by regex
-      let clean = url.replace(/[.,;>]+$/, '');
+      let clean = url.replace(/.*/, '');
       // Basic length check
       if (clean && clean.length > 7) {
         bucket.add(clean);
@@ -476,6 +480,13 @@ function extractUrlsFromInteraction(outputs) {
   return foundUrls;
 }
 
+module.exports = {
+  isValidUrl,
+  unwrapVertexRedirect,
+  saveURLs,
+  extractUrlsFromInteraction
+};
+
 async function unwrapVertexRedirect(url) {
   // Only process Vertex redirect links
   if (!VERTEX_REDIRECT_RE.test(url)) {
@@ -507,3 +518,12 @@ async function unwrapVertexRedirect(url) {
     return url; // Graceful fallback
   }
 }
+module.exports = {
+  isValidUrl,
+  unwrapVertexRedirect,
+  saveURLs,
+  extractUrlsFromInteraction,
+  harvestUrls,
+  harvestUrlsFromText,
+  generateReasoningString
+};

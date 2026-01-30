@@ -1,33 +1,35 @@
+const { admin, db, logger } = require('../../config/firebase');
+
 function getModelPricing(model = '', inputTokens = 0) {
   const normalizedModel = model || '';
 
-  if (normalizedModel.includes('gemini-3-pro') || normalizedModel.includes('deep-research')) {
+  if (normalizedModel.includes('aiModel') || normalizedModel.includes('deep-research')) {
     const tierTwo = inputTokens > 200000;
     const inputRate = (tierTwo ? 4.00 : 2.00) / 1000000;
     const outputRate = (tierTwo ? 18.00 : 12.00) / 1000000;
     return { inputRate, outputRate, toolRate: outputRate };
   }
 
-  if (normalizedModel.includes('gemini-2.5-pro')) {
+  if (normalizedModel.includes('aiModel')) {
     const tierTwo = inputTokens > 200000;
     const inputRate = (tierTwo ? 2.5 : 1.25) / 1000000;
     const outputRate = (tierTwo ? 15 : 10) / 1000000;
     return { inputRate, outputRate, toolRate: outputRate };
   }
 
-  if (normalizedModel.includes('gemini-2.5-flash-lite')) {
+  if (normalizedModel.includes('aiModel-lite')) {
     const inputRate = 0.1 / 1000000;
     const outputRate = 0.4 / 1000000;
     return { inputRate, outputRate, toolRate: outputRate };
   }
 
-  if (normalizedModel.includes('gemini-2.5-flash')) {
+  if (normalizedModel.includes('aiModel')) {
     const inputRate = 0.3 / 1000000;
     const outputRate = 2.5 / 1000000;
     return { inputRate, outputRate, toolRate: outputRate };
   }
 
-  if (normalizedModel.includes('gemini-3-flash')) {
+  if (normalizedModel.includes('aiModel')) {
     // Gemini 3 Flash Preview has flat pricing regardless of input token count
     const inputRate = 0.5 / 1000000;
     const outputRate = 3.0 / 1000000;
@@ -220,7 +222,7 @@ async function logAITransactionI(params) {
           totalTokens.output += outputTks;
 
           // Identify Model
-          const turnModel = turn.model || "gemini-2.5-flash";
+          const turnModel = turn.model || "aiModel";
           modelsSeen.add(turnModel);
 
           // Calculate turn cost
@@ -388,7 +390,7 @@ async function logAITransactionAgent(params) {
       // For now, we rely on checking function names as primary method.
 
       // 2. Determine Model (Event-specific > Default)
-      let eventModel = defaultModel || "gemini-3-pro-preview";
+      let eventModel = defaultModel || "aiModel";
       let evtUsage = e.usage_metadata;
       let foundStats = false;
 
@@ -497,3 +499,17 @@ async function logAITransactionAgent(params) {
     logger.error(`[logAITransactionAgent] Failed to log: ${error.message}`);
   }
 }
+module.exports = {
+  getModelPricing,
+  calculateCost,
+  logAITransaction,
+  logAITransactionAgent,
+  logAIReasoningWorkItem,
+  logAIReasoningSingle,
+  logAIReasoningBatch,
+  logAIReasoningFinal,
+  logAIReasoningSimple,
+  logAIReasoning,
+  logFullConversation,
+  logAITransactionSimple
+};

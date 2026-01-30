@@ -9,29 +9,29 @@ async function searchExistingEmissionsFactorsWithAI({ query, productId, material
   logger.info(`[searchExistingEmissionsFactorsWithAI] Starting search for query: "${query}"`);
 
   // 1. Define the specific system prompt for the AI's task.
-  const SYS_MSG_DB_SEARCH = `...`;
+  const SYS_MSG_DB_SEARCH = "..."
 
   // 2. Configure and run the AI call with Vertex AI Search grounding.
   const vGenerationConfig = {
-    temperature: 1, // Lower temperature for more deterministic, fact-based retrieval
-    maxOutputTokens: 65535,
-    systemInstruction: { parts: [{ text: SYS_MSG_DB_SEARCH }] },
-    tools: [{
+//
+//
+//
+//
       retrieval: {
         vertexAiSearch: {
           // !!! IMPORTANT !!! Replace this with your actual datastore ID
-          datastore: '...',
+          datastore: 'projects/projectId/locations/global/collections/default_collection/dataStores/ecoze-ai-search-emissions-factors_1752512690221',
         },
       },
     }],
-    thinkingConfig: {
+//
       includeThoughts: true,
       thinkingBudget: 24576 // Correct budget for the pro model
     },
   };
 
   const { answer: rawAIResponse, thoughts, cost, totalTokens, searchQueries, model } = await runGeminiStream({
-    model: 'gemini-2.5-flash', //flash
+    model: 'aiModel', //flash
     generationConfig: vGenerationConfig,
     user: query,
   });
@@ -41,7 +41,7 @@ async function searchExistingEmissionsFactorsWithAI({ query, productId, material
 
   // 3. Log the transaction for cost tracking.
   await logAITransaction({
-    cfName: 'apcfEmissionsFactors',
+    cfName: 'cf10',
     productId: productId || linkedProductId,
     materialId: materialId,
     cost: cost,
@@ -55,7 +55,7 @@ async function searchExistingEmissionsFactorsWithAI({ query, productId, material
     user: query,
     thoughts: thoughts,
     answer: rawAIResponse,
-    cloudfunction: 'apcfEmissionsFactors',
+    cloudfunction: 'cf10',
     productId: productId,
     materialId: materialId,
   });
@@ -74,16 +74,16 @@ async function getTestQueuePath() {
   if (testQueuePath) return testQueuePath;
 
   testTasksCli = new CloudTasksClient();
-  const project = process.env.GCP_PROJECT_ID || '...';
+  const project = process.env.GCP_PROJECT_ID || 'projectId';
   const location = REGION;
   testQueuePath = testTasksCli.queuePath(project, location, TEST_QUEUE_ID);
 
   try {
     await testTasksCli.getQueue({ name: testQueuePath });
-    logger.info(`[testTrigger] Found existing queue: ${TEST_QUEUE_ID}`);
+    logger.info(`[cf58] Found existing queue: ${TEST_QUEUE_ID}`);
   } catch (error) {
     if (error.code === 5) { // 5 = NOT_FOUND
-      logger.warn(`[testTrigger] Queue "${TEST_QUEUE_ID}" not found. Creating it...`);
+      logger.warn(`[cf58] Queue "${TEST_QUEUE_ID}" not found. Creating it...`);
       await testTasksCli.createQueue({
         parent: testTasksCli.locationPath(project, location),
         queue: {
@@ -91,7 +91,7 @@ async function getTestQueuePath() {
           rateLimits: { maxConcurrentDispatches: 20 },
         },
       });
-      logger.info(`[testTrigger] Successfully created queue: ${TEST_QUEUE_ID}`);
+      logger.info(`[cf58] Successfully created queue: ${TEST_QUEUE_ID}`);
     } else {
       throw error; // Re-throw other errors
     }
@@ -100,10 +100,10 @@ async function getTestQueuePath() {
 }
 
 async function scheduleNextCheck(productId) {
-  const project = process.env.GCP_PROJECT_ID || '...';
-  const location = 'europe-west2'; // Or your tasks queue region
+  const project = process.env.GCP_PROJECT_ID || 'projectId';
+  const location = 'ecozeAIRegion'; // Or your tasks queue region
   const queue = 'apcf-status-queue';
-  const functionUrl = `...`;
+  const functionUrl = `https://${location}-${project}.cloudfunctions.net/cf40`;
 
   const queuePath = tasksClient.queuePath(project, location, queue);
 
@@ -124,9 +124,9 @@ async function scheduleNextCheck(productId) {
 
   try {
     const [response] = await tasksClient.createTask({ parent: queuePath, task });
-    logger.info(`[apcfStatusMain] Scheduled next check for product ${productId}. Task: ${response.name}`);
+    logger.info(`[cf40] Scheduled next check for product ${productId}. Task: ${response.name}`);
   } catch (error) {
-    logger.error(`[apcfStatusMain] Failed to schedule next check for product ${productId}:`, error);
+    logger.error(`[cf40] Failed to schedule next check for product ${productId}:`, error);
     // Throw error to indicate failure, which can be useful for monitoring
     throw new Error('Failed to create Cloud Task.');
   }
@@ -179,7 +179,7 @@ async function deleteQueryBatch(query, resolve, reject) {
 }
 
 async function scheduleCheckInEmail(userName, daysFromNow, checkInNumber) {
-  const project = process.env.GCP_PROJECT_ID || '...';
+  const project = process.env.GCP_PROJECT_ID || 'projectId';
   const location = REGION;
   const queue = 'emails';
 
@@ -187,11 +187,11 @@ async function scheduleCheckInEmail(userName, daysFromNow, checkInNumber) {
   const queuePath = tasksClient.queuePath(project, location, queue);
 
   // The URL of the Cloud Function to invoke
-  const url = `https://${location}-${project}.cloudfunctions.net/sendEmail`;
+  const url = `https://${location}-${project}.cloudfunctions.net/cf57`;
 
-  // Construct the payload for the sendEmail function
+  // Construct the payload for the cf57 function
   const payload = {
-    recipient: "...",
+    recipient: "sam.linfield@ecoze.app",
     subject: `${checkInNumber}${checkInNumber === 1 ? 'st' : (checkInNumber === 2 ? 'nd' : 'rd')} check in on test user: ${userName}`,
     body: `Check in on ${userName}, to see how they are getting on with the testing`,
   };

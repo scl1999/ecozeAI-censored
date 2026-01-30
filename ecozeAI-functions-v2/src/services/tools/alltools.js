@@ -59,11 +59,11 @@ async function executeUrlFinder({ task }) {
   const collectedUrls = new Set();
 
   await runGeminiStream({
-    model: 'gemini-2.5-flash',
+    model: 'aiModel',
     user: `Task: ${task}\n\nFind a single best URL preferably to start the research. If you arent sure which is the best URL, return a list of potential URLs where the research task can begin from.`,
     generationConfig: {
-      tools: [{ googleSearch: {} }],
-      temperature: 1
+//
+//
     },
     collectedUrls // Pass the set to collect grounded URLs
   });
@@ -95,11 +95,11 @@ async function executeBrowserUse({ task, url }) {
 async function executeUrlAnalyse({ task, url }) {
   logger.info(`[UrlAnalyse] Task: ${task}, URL: ${url}`);
   const { answer } = await runGeminiStream({
-    model: 'gemini-2.5-flash',
+    model: 'aiModel',
     user: `Analyze this URL: ${url}\n\nTask: ${task}\n\nExtract the requested information.`,
     generationConfig: {
-      tools: [{ googleSearch: {} }], // Enable search/grounding to access URL content
-      temperature: 1
+//
+//
     }
   });
   return answer;
@@ -185,7 +185,7 @@ async function dispatchFunctionCall(call) {
     if (name === "python_calculations") {
       const { code } = args;
       // Basic guard-rail: only allow numbers, ops, and safe functions
-      if (!/^[\d\s()+\-*/^._,=eEpiPIsqrtlogsinco*tanabsA-Za-z]+$/.test(code)) {
+      if (! /.*/^._,=eEpiPIsqrtlogsinco*tanabsA-Za-z]+$/.test(code)) {
         return { error: "Expression contains unsupported characters" };
       }
       const result = math.evaluate(code);
@@ -346,7 +346,7 @@ async function crawleeCrawl({
 
         // Extract text content from body
         const text = $('body').text()
-          .replace(/\s+/g, ' ')
+          .replace( /.*/, ' ')
           .trim()
           .slice(0, 50000);
 
@@ -442,7 +442,7 @@ async function productDescription({ productId = null, materialId = null }) {
     return;
   }
 
-  const model = "gemini-3-flash-preview";
+  const model = "aiModel";
   const cfName = "productDescription";
 
   // --- Step 1: First AI Call (Research) ---
@@ -457,11 +457,11 @@ Description:
 "`;
 
   const config1 = {
-    temperature: 1,
-    maxOutputTokens: 65535,
-    systemInstruction: { parts: [{ text: sys1 }] },
-    tools: [{ urlContext: {} }, { googleSearch: {} }],
-    thinkingConfig: {
+//
+//
+//
+//
+//
       includeThoughts: true,
       thinkingLevel: "HIGH"
     }
@@ -477,7 +477,7 @@ Description:
 
   const descriptionOriginalRaw = res1.answer.trim();
   // Extract description using regex to handle the specific format requested
-  const descMatch1 = descriptionOriginalRaw.match(/Description:\s*([\s\S]+)/i);
+  const descMatch1 = descriptionOriginalRaw.match( /.*/);
   const descriptionOriginal = descMatch1 ? descMatch1[1].trim() : descriptionOriginalRaw;
 
   // Log AI 1 Transaction & Reasoning
@@ -521,18 +521,14 @@ Output your answer in the exact following format and no other text:
 *description: [Set to "..." if the description passed. If the description didnt pass, output the complete new description here.]
 "`;
 
-  const prompt2 = `Product Name:
-${pmName}
-
-Description given by the AI:
-${descriptionOriginal}`;
+  const prompt2 = "...";
 
   const config2 = {
-    temperature: 1,
-    maxOutputTokens: 65535,
-    systemInstruction: { parts: [{ text: sys2 }] },
-    tools: [{ urlContext: {} }, { googleSearch: {} }],
-    thinkingConfig: {
+//
+//
+//
+//
+//
       includeThoughts: true,
       thinkingLevel: "HIGH"
     }
@@ -578,10 +574,10 @@ ${descriptionOriginal}`;
 
   // --- Step 3: Process Results and Update Firestore ---
   const ai2Answer = res2.answer.trim();
-  const passMatch = ai2Answer.match(/\*pass_or_fail:\s*(Pass|Fail)/i);
+  const passMatch = ai2Answer.match( /.*/);
   const passOrFail = passMatch ? passMatch[1].trim() : "Fail";
 
-  const descMatch2 = ai2Answer.match(/\*description:\s*([\s\S]+)/i);
+  const descMatch2 = ai2Answer.match( /.*/);
   const descriptionNew = descMatch2 ? descMatch2[1].trim() : "...";
 
   let descriptionToAppend = "";

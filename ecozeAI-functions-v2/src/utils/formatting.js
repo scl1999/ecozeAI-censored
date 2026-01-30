@@ -1,7 +1,10 @@
+const { logger } = require('../config/firebase');
+const { BOM_RE } = require('../config/constants');
+
 function parseCfValue(txt = "") {
-  const m = txt.match(/\*?cf_value\s*=\s*([0-9.,eE+\-]+)/i);
+  const m = txt.match(/.*/);
   if (!m) return null;
-  const v = parseFloat(m[1].replace(/,/g, ""));
+  const v = parseFloat(m[1].replace(/.*/, ""));
   return Number.isFinite(v) ? v : null;
 }
 
@@ -54,25 +57,22 @@ async function* parseNDJSON(readableStream) {
   }
 }
 
-
-function getFormattedDate() {
-  const date = new Date();
-  const day = date.getDate();
-  const month = date.toLocaleString('default', { month: 'long' });
-  const year = date.getFullYear();
-
-  const getDaySuffix = (day) => {
-    if (day > 3 && day < 21) return 'th';
-    switch (day % 10) {
-      case 1: return "st";
-      case 2: return "nd";
-      case 3: return "rd";
-      default: return "th";
-    }
-  };
-
-  return `${day}${getDaySuffix(day)} ${month} ${year}`;
-}
+module.exports = {
+  parseCfValue,
+  parseNDJSON,
+  parseBom,
+  parseMPCFFullProducts,
+  parseOtherMetrics,
+  parseMassCorrections,
+  parseCFCorrections,
+  parseCFAmendments,
+  parseUncertaintyScores,
+  parseProductCBAM,
+  parseMaterialCBAM,
+  parseProductCBAMProcessing,
+  parseSupplierSources,
+  getLabelForStep
+};
 
 function parseBom(text) {
   const out = [];
@@ -82,9 +82,9 @@ function parseBom(text) {
     let massVal = null;
     let unit = "Unknown";
 
-    if (!/^unknown$/i.test(rawMass)) {
-      const num = rawMass.match(/([\d.,]+)/);
-      if (num) massVal = parseFloat(num[1].replace(/,/g, ""));
+    if (! /.*/.test(rawMass)) {
+      const num = rawMass.match(/.*/);
+      if (num) massVal = parseFloat(num[1].replace(/.*/, ""));
       const rem = rawMass.replace(num ? num[0] : "", "").trim();
       if (rem) unit = rem.toLowerCase();
     }
@@ -114,7 +114,7 @@ function parseMPCFFullProducts(text) {
   };
 
   // Regex for Existing Products (now only captures the name)
-  const existingRegex = /\*?pa_existing_name_(\d+):\s*([^\r\n]+)/gi;
+  const existingRegex = /.*/;
   let match;
   while ((match = existingRegex.exec(text)) !== null) {
     products.existing.push({
@@ -123,7 +123,7 @@ function parseMPCFFullProducts(text) {
   }
 
   // Regex for New Products (reasoning part removed)
-  const newRegex = /\*?pa_name_(\d+):\s*([^\r\n]+)\r?\n\*?pa_carbon_footprint_\1:\s*([^\r\n]+)\r?\n\*?official_cf_sources_\1:\s*(.*?)(?=\r?\n\s*\r?\n\*?pa_name_|\s*\*evidence_snippets|\s*$)/gi;
+  const newRegex = /.*/;
   while ((match = newRegex.exec(text)) !== null) {
     const name = match[2].trim();
     const carbonFootprintRaw = match[3].trim();
@@ -174,7 +174,7 @@ function parseOtherMetrics(text) {
 
 function parseMassCorrections(text) {
   const corrections = [];
-  const regex = /\*material_(\d+):\s*([^\r\n]+)[\s\S]*?\*material_\1_new_mass:\s*([^\r\n]+)[\s\S]*?\*material_\1_new_mass_unit:\s*([^\r\n]+)[\s\S]*?\*material_\1_reasoning:\s*([\s\S]+?)(?=\n\*\s*material_|$)/gi;
+  const regex = /.*/;
 
   let match;
   while ((match = regex.exec(text)) !== null) {
@@ -192,7 +192,7 @@ function parseMassCorrections(text) {
 function parseCFCorrections(text) {
   const corrections = [];
   // This regex captures the name and the two separate reasoning blocks
-  const regex = /\*?material_(\d+):\s*([^\r\n]+)[\s\S]*?\*?material_\1_ccf_reasoning:\s*([\s\S]+?)\r?\n\*?material_\1_tcf_reasoning:\s*([\s\S]+?)(?=\r?\n\*?\s*material_|$)/gi;
+  const regex = /.*/;
 
   let match;
   while ((match = regex.exec(text)) !== null) {
@@ -206,8 +206,8 @@ function parseCFCorrections(text) {
 }
 
 function parseCFAmendments(text) {
-  const corrected_calculated_cf_match = text.match(/corrected_calculated_cf_kgCO2e:\s*([\d.]+)/i);
-  const corrected_transport_cf_match = text.match(/corrected_transport_cf_kgCO2e:\s*([\d.]+)/i);
+  const corrected_calculated_cf_match = text.match(/.*/);
+  const corrected_transport_cf_match = text.match(/.*/);
 
   const calculated_cf = corrected_calculated_cf_match ? parseFloat(corrected_calculated_cf_match[1]) : null;
   const transport_cf = corrected_transport_cf_match ? parseFloat(corrected_transport_cf_match[1]) : null;
@@ -256,11 +256,11 @@ function parseOtherMetrics(text) {
 }
 
 function parseProductCBAM(text) {
-  const inScopeMatch = text.match(/\*cbam_in_scope:\s*(TRUE|FALSE)/i);
-  const reasoningMatch = text.match(/\*cbam_in_scope_reasoning:\s*([\s\S]+?)(?=\r?\n\*|$)/i);
-  const cnCodeMatch = text.match(/\*cn_code:\s*([^\r\n]*)/i);
-  const estCostMatch = text.match(/\*cbam_est_cost:\s*([^\r\n]*)/i);
-  const carbonPriceMatch = text.match(/\*carbon_price_paid:\s*([^\r\n]*)/i);
+  const inScopeMatch = text.match(/.*/);
+  const reasoningMatch = text.match(/.*/);
+  const cnCodeMatch = text.match(/.*/);
+  const estCostMatch = text.match(/.*/);
+  const carbonPriceMatch = text.match(/.*/);
 
   return {
     inScope: inScopeMatch ? /true/i.test(inScopeMatch[1]) : null,
@@ -273,7 +273,7 @@ function parseProductCBAM(text) {
 
 function parseMaterialCBAM(text) {
   const materials = [];
-  const regex = /\*cbam_material_(\d+):\s*([^\r\n]+)[\s\S]*?\*cbam_cn_code_\1:\s*([^\r\n]+)/gi;
+  const regex = /.*/;
   let match;
   while ((match = regex.exec(text)) !== null) {
     materials.push({
@@ -285,10 +285,10 @@ function parseMaterialCBAM(text) {
 }
 
 function parseProductCBAMProcessing(text) {
-  const processNameMatch = text.match(/^\s*process_name:\s*([^\r\n]+)/im);
+  const processNameMatch = text.match(/.*/);
 
   const fuels = [];
-  const fuelRegex = /\*fuel_or_electricity_used_(\d+):\s*([^\r\n]+)[\s\S]*?\*fe_amount_\1:\s*([^\r\n]+)[\s\S]*?\*fe_amount_unit_\1:\s*([^\r\n]+)[\s\S]*?\*fe_scope_\1:\s*([^\r\n]+)[\s\S]*?\*fe_co2e_kg_\1:\s*([^\r\n]+)/gi;
+  const fuelRegex = /.*/;
   let fuelMatch;
   while ((fuelMatch = fuelRegex.exec(text)) !== null) {
     const amount = parseFloat(fuelMatch[3]);
@@ -303,7 +303,7 @@ function parseProductCBAMProcessing(text) {
   }
 
   const wastes = [];
-  const wasteRegex = /\*pcmi_waste_(\d+):\s*([^\r\n]+)[\s\S]*?\*pcmi_waste_amount_\1:\s*([^\r\n]+)[\s\S]*?\*pcmi_waste_co2e_kg_\1:\s*([^\r\n]+)/gi;
+  const wasteRegex = /.*/;
   let wasteMatch;
   while ((wasteMatch = wasteRegex.exec(text)) !== null) {
     const co2e = parseFloat(wasteMatch[4]);
@@ -323,7 +323,7 @@ function parseProductCBAMProcessing(text) {
 
 function parseSupplierSources(text) {
   const sources = [];
-  const regex = /\*?material_(\d+):\s*([^\r\n]+)\r?\n\*?material_url_\1:\s*([^\r\n]+)\r?\n\*?material_url_used_info_\1:\s*([\s\S]+?)(?=\r?\n\*?material_|$)/gi;
+  const regex = /.*/;
 
   let match;
   while ((match = regex.exec(text)) !== null) {

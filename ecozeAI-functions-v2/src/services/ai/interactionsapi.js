@@ -1,4 +1,8 @@
 // Helper to Create Interaction (REST) - supports Streaming
+const { logger, fetch } = require('../../config/firebase');
+const { INTERACTIONS_API_BASE } = require('../../config/constants');
+const { getFormattedDate } = require('../../utils/time');
+
 async function createInteraction(payload, isStreaming = false) {
   // NEW: Inject Date into Input if present
   if (payload && typeof payload.input === 'string') {
@@ -90,3 +94,8 @@ async function getInteractionChain(interactionId) {
   }
   return chain.reverse(); // Chronological order
 }
+module.exports = {
+  createInteraction,
+  getInteraction,
+  extractUrlsFromInteraction
+};
