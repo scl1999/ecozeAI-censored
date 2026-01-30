@@ -138,78 +138,7 @@ exports.cf5 = onRequest({
     if (reasoningTCF) userPrompt += `${reasoningTCF}\n`;
 
     /******************** 4. Define System Prompt & AI Call ********************/
-    const sysPrompt = "..."s assembly location.
-- the *Parent Calculated CF* (cradle-to-gate (A1-A3)) value includes the sum of the child PCMI's transport and calculated CFs + the assembly emissions of the parent PCMI. 
-- *Parent Initial Calculated CF* (cradle-to-gate (A1-A3))(top-down calculation) is the CF calculated for the parent PCMI before we built a bill of materials for the parent PCMI.
-- *Parent Calculated CF:* (cradle-to-gate (A1-A3))(bottom-up calculation) is the CF calculated for the parent PCMI after we built a bill of materials for the parent PCMI and summed the CFs of this child PCMI (the CF we are reviewing) with its peer PCMIs listed.
-- If the mass is unset, assume it is small and judge the mass based on the mass of the parent products - adjusting your CF calculation appropriately
-
-!! Make sure carbon offsets (through reforestation etc) aren't being included in the calculations. !!
-!! If all the CFs look correct or you cannot find an answer, just return "Done" and no other text !!
-!! For cradle-to-gate footprints -> A1: Raw Material Supply: The extraction, harvesting, and processing of all raw materials. | A2: Transport: The transportation of those raw materials (child products / components / materials / ingredients) from the suppliers to the product's manufacturing facility. | A3: Manufacturing: The energy, materials, and waste processing involved in converting the raw materials into a finished product at the factory. !!
-!! You must use your google_search and url_context tools to research the internet for facts !!
-!! Always start with Google Search to find authoritative pages.For any promising result call urlContext to read the full content.!!
-!! You must use the exact format shown below with no exceptions !!
-!! In the parent supply chain you may have been given the official manufacturer disclosed CF of the parent PCMI(s) !!
-!! All CF figures are in kgCO2e !!
-!! PRIMARY OBJECTIVE: Your task is to provide a more realistic CF for the child PCMI. Your new calculation should be guided by the Correction Reasoning and your own deep research. The goal is to correct the previous error and produce a value that is logical in the context of the parent PCMI's overall footprint. !!
-!! You have been given the locations / addresses of where the PCMI, peer and parent PCMIs were assembled and / or extracted (if raw materials). This is given to you incase the CF is location sensitive!!
-
----
-### CRITICAL: DATA QUALITY & UNCERTAINTY PROTOCOL
-Your final calculation will be audited by another system based on the GHG Protocol's Pedigree Matrix for data quality. To ensure your result is accurate and defensible, you MUST prioritize your research according to the following five quality indicators. A better source is always preferable to a closer but lower-quality number.
-
-**1. Reliability (Precision): Prioritize Primary, Verifiable Sources**
-You must rank sources in this strict order of preference. A source from a higher tier always supersedes one from a lower tier.
-* **Tier 1 (Highest Priority): Environmental Product Declarations (EPDs).** These are third-party verified and the gold standard.
-* **Tier 2: Peer-Reviewed Life Cycle Assessment (LCA) Studies.** Data from scientific journals or official academic reports.
-* **Tier 3: Manufacturer's Official Reports.** Look for detailed sustainability, ESG, or product CF reports directly from the manufacturer.
-* **Tier 4: Reputable Industry & Government Databases.** Data from major industry bodies or government sources (e.g., DEFRA, Ecoinvent).
-* **AVOID:** Marketing materials, blog posts, news articles without specific data sources, and unverified third-party calculators.
-
-**2. Temporal Representativeness: Prioritize Recent Data**
-Actively seek the most up-to-date figures.
-* **Excellent:** Data published within the last 3 years.
-* **Acceptable:** Data published within the last 6 years.
-* **Poor:** Data older than 10 years. If you must use older data, you must explicitly acknowledge its potential inaccuracy in your reasoning.
-
-**3. Geographical Representativeness: Match the Location**
-The location of manufacturing is critical.
-* Use the provided Assembly Address or Country of Origin to find region-specific data. An emissions factor for the 'Chinese electricity grid' is far better than a 'global average' if the product is made in China.
-
-**4. Technological Representativeness: Match the Process**
-Ensure the production technology of your data source is relevant to the product.
-* For a modern 3nm semiconductor, do not use data for a 10-year-old 28nm process. Find the closest available technological proxy and justify your choice.
-
-**5. Completeness: Prefer Comprehensive Data**
-Favour sources that cover the full cradle-to-gate (A1-A3) scope (Modules A1-A3) comprehensively, as found in full EPDs and LCA reports. Avoid figures where the system boundaries are unclear.
-
-Your final *cf_value should be the result of this rigorous, quality-focused research. The more you adhere to these principles, the more accurate your calculation will be.
----
-
-Output your corrections in the following format exactly and output no other text:
-"
-corrected_calculated_cf_kgCO2e: [the numerical part of corrected calculated CF (cradle-to-gate (A1-A3)) for the PCMI, in kg CO2e] (Or set to Done if no correction required)
-corrected_transport_cf_kgCO2e: [the numerical part of corrected transport CF (cradle-to-gate (A1-A3)) for the PCMI, in kg CO2e] (Or set to Done if no correction required)
-
-Emissions Factors: [if any were actually used as a starting point for your calculations]
-
-*ef_name_1 = [give the 1st emissions factor a name as given by the publisher]
-*ef_publisher_1 = [the publisher (e.g. Defra) of the 1st emissions factor]
-*ef_date_1 = [the date of publication (e.g. 2025) of the 1st emissions factor]
-*ef_applicability_1 = [a short explanation of the applicability of the 1st emissions factor]
-*ef_methodology_1 = [a short explanation of the methodology behind the 1st emissions factor]
-
-... [Repeat for any other emissions factors used]
-
-*ef_name_N = [give the Nth emissions factor a name as given by the publisher]
-*ef_publisher_N = [the publisher (e.g. Defra) of the Nth emissions factor]
-*ef_date_N = [the date of publication (e.g. 2025) of the Nth emissions factor]
-*ef_applicability_N = [a short explanation of the applicability of the Nth emissions factor]
-*ef_methodology_N = [a short explanation of the methodology behind the Nth emissions factor]
-"
-
-`;
+    const sysPrompt = "...";
 
     const vGenerationConfig = {
 //
