@@ -1,3 +1,9 @@
+const { logger, db, tasksClient } = require('../config/firebase');
+const { runGeminiStream } = require('../services/ai/gemini');
+const { logAITransaction, logAIReasoning } = require('../services/ai/costs');
+const { REGION, TEST_QUEUE_ID } = require('../config/constants');
+const { CloudTasksClient } = require("@google-cloud/tasks");
+
 function calculateAverage(numbers, filterZeros = false) {
   const values = filterZeros ? numbers.filter(n => typeof n === 'number' && isFinite(n) && n !== 0) : numbers.filter(n => typeof n === 'number' && isFinite(n));
   if (values.length === 0) return 0;
@@ -13,61 +19,61 @@ async function searchExistingEmissionsFactorsWithAI({ query, productId, material
 
   // 2. Configure and run the AI call with Vertex AI Search grounding.
   const vGenerationConfig = {
-//
-//
-//
-//
-      retrieval: {
-        vertexAiSearch: {
-          // !!! IMPORTANT !!! Replace this with your actual datastore ID
-          datastore: 'projects/projectId/locations/global/collections/default_collection/dataStores/ecoze-ai-search-emissions-factors_1752512690221',
-        },
+    //
+    //
+    //
+    //
+    retrieval: {
+      vertexAiSearch: {
+        // !!! IMPORTANT !!! Replace this with your actual datastore ID
+        datastore: 'projects/projectId/locations/global/collections/default_collection/dataStores/ecoze-ai-search-emissions-factors_1752512690221',
       },
-    }],
-//
-      includeThoughts: true,
-      thinkingBudget: 24576 // Correct budget for the pro model
     },
+  }],
+    //
+    includeThoughts: true,
+    thinkingBudget: 24576 // Correct budget for the pro model
+},
   };
 
-  const { answer: rawAIResponse, thoughts, cost, totalTokens, searchQueries, model } = await runGeminiStream({
-    model: 'aiModel', //flash
-    generationConfig: vGenerationConfig,
-    user: query,
-  });
+const { answer: rawAIResponse, thoughts, cost, totalTokens, searchQueries, model } = await runGeminiStream({
+  model: 'aiModel', //flash
+  generationConfig: vGenerationConfig,
+  user: query,
+});
 
-  const mSnap = materialId ? await db.collection("materials").doc(materialId).get() : null;
-  const linkedProductId = mSnap && mSnap.exists ? mSnap.data().linked_product?.id || null : null;
+const mSnap = materialId ? await db.collection("materials").doc(materialId).get() : null;
+const linkedProductId = mSnap && mSnap.exists ? mSnap.data().linked_product?.id || null : null;
 
-  // 3. Log the transaction for cost tracking.
-  await logAITransaction({
-    cfName: 'cf10',
-    productId: productId || linkedProductId,
-    materialId: materialId,
-    cost: cost,
-    flashTks: totalTokens,
-    searchQueries: searchQueries,
-    modelUsed: model,
-  });
+// 3. Log the transaction for cost tracking.
+await logAITransaction({
+  cfName: 'cf10',
+  productId: productId || linkedProductId,
+  materialId: materialId,
+  cost: cost,
+  flashTks: totalTokens,
+  searchQueries: searchQueries,
+  modelUsed: model,
+});
 
-  await logAIReasoning({
-    sys: SYS_MSG_DB_SEARCH,
-    user: query,
-    thoughts: thoughts,
-    answer: rawAIResponse,
-    cloudfunction: 'cf10',
-    productId: productId,
-    materialId: materialId,
-  });
+await logAIReasoning({
+  sys: SYS_MSG_DB_SEARCH,
+  user: query,
+  thoughts: thoughts,
+  answer: rawAIResponse,
+  cloudfunction: 'cf10',
+  productId: productId,
+  materialId: materialId,
+});
 
-  // 4. Return the AI's direct response, with a simple validity check.
-  if (!rawAIResponse || /^Unknown$/i.test(rawAIResponse.trim()) || !rawAIResponse.includes("*name_1")) {
-    logger.warn("[searchExistingEmissionsFactorsWithAI] AI returned 'Unknown' or an invalid format.");
-    return { response: "[Relevant Emissions Factors]\n*None found*", model: model };
-  }
+// 4. Return the AI's direct response, with a simple validity check.
+if (!rawAIResponse || /^Unknown$/i.test(rawAIResponse.trim()) || !rawAIResponse.includes("*name_1")) {
+  logger.warn("[searchExistingEmissionsFactorsWithAI] AI returned 'Unknown' or an invalid format.");
+  return { response: "[Relevant Emissions Factors]\n*None found*", model: model };
+}
 
-  logger.info(`[searchExistingEmissionsFactorsWithAI] Returning direct AI response:\n${rawAIResponse}`);
-  return { response: rawAIResponse, model: model };
+logger.info(`[searchExistingEmissionsFactorsWithAI] Returning direct AI response:\n${rawAIResponse}`);
+return { response: rawAIResponse, model: model };
 }
 
 async function getTestQueuePath() {
@@ -187,7 +193,7 @@ async function scheduleCheckInEmail(userName, daysFromNow, checkInNumber) {
   const queuePath = tasksClient.queuePath(project, location, queue);
 
   // The URL of the Cloud Function to invoke
-  const url = `https://${location}-${project}.cloudfunctions.net/cf57`;
+  const url = `https://${location}-${project}.cloudfunctions.net/apcfInitialTestingCheckIn`;
 
   // Construct the payload for the cf57 function
   const payload = {
@@ -219,3 +225,13 @@ async function scheduleCheckInEmail(userName, daysFromNow, checkInNumber) {
   logger.info(`[scheduleCheckInEmail] Creating task for check-in #${checkInNumber} to run in ${daysFromNow} days for user: ${userName}.`);
   await tasksClient.createTask({ parent: queuePath, task });
 }
+
+module.exports = {
+  calculateAverage,
+  searchExistingEmissionsFactorsWithAI,
+  getTestQueuePath,
+  scheduleNextCheck,
+  deleteDocumentAndSubcollections,
+  deleteCollection,
+  scheduleCheckInEmail
+};

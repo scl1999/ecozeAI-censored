@@ -21,11 +21,11 @@ const MAX_LOOPS = 20;
 
 const FOLLOWUP_LIMIT = 25;
 /* ---------- BoM lines with optional mass ---------- */
-const BOM_RE = /.*/;
+const BOM_RE = /(?:\*? ?(?:\*\*?)?tier1_material_name_(\d+):\s*([^\r\n]+)[\r\n]+)(?:\*? ?(?:\*\*?)?supplier_name_\1:\s*([^\r\n]+)[\r\n]+)(?:(?:\*? ?(?:\*\*?)?description_\1:\s*([^\r\n]+)[\r\n]+))?(?:\*? ?(?:\*\*?)?mass_\1:\s*([^\r\n]+)[\r\n]*)(?:\*? ?(?:\*\*?)?data_sources_urls_\1:\s*([^\r\n]+))?/gi;
 const searchTools = [{ googleSearch: {} }];
 const calcTools = []; // Reserved for future calculator/math tools
 const CFSR_EXCLUDE = ["saveURLs-urlUsage", "cf15-RefineCheck", "cf20", "cf48", "saveURLs-urlUsage-batch-1", "saveURLs-urlUsage-batch-2", "saveURLs-urlUsage-batch-3", "saveURLs-urlUsage-batch-4", "saveURLs-urlUsage-batch-5", "saveURLs-urlUsage-batch-6", "saveURLs-urlUsage-batch-7", "apcfSupplierDisclosed-Check", "apcfSupplierDisclosed-initial", "apcfSupplierFinderCheck", "apcfSupplierFinderCheckFinal", "apcfSupplierFinderFactCheck", "apcfSupplierFinderDRFactCheck", "apcfInitial2", "apcfMaterials2", "apcfSupplierDisclosed-initial", "apcfSupplierDisclosed-FC", "cf37-FC", "cf11-EnhanceName", "apcfSupplierAddressFactChecker"];
-const VERTEX_REDIRECT_RE = /.*/;
+const VERTEX_REDIRECT_RE = /^https:\/\/vertexaisearch\.cloud\.google\.com\/grounding-api-redirect\//i;
 
 const TOOL_ICON = {
   google_search: "🔍",

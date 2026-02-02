@@ -201,8 +201,8 @@ async function runChatLoop({
     const { totalTokens: currentInputTks } = await runWithRetry(() => ai.models.countTokens({
       model,
       contents: currentTurnPayload,
-//
-//
+      //
+      //
     }));
     totalInputTks += currentInputTks || 0;
 
@@ -546,58 +546,58 @@ Description:
 "`;
 
   const config1 = {
-//
-//
-//
-//
-//
-      includeThoughts: true,
-      thinkingLevel: "HIGH"
-    }
-  };
-
-  const urls1 = new Set();
-  const res1 = await runGeminiStream({
-    model,
-    generationConfig: config1,
-    user: pmName,
-    collectedUrls: urls1
-  });
-
-  const descriptionOriginalRaw = res1.answer.trim();
-  const descMatch1 = descriptionOriginalRaw.match(/.*/);
-  const descriptionOriginal = descMatch1 ? descMatch1[1].trim() : descriptionOriginalRaw;
-
-  await logAITransaction({
-    cfName,
-    productId,
-    materialId,
-    cost: res1.cost,
-    totalTokens: res1.totalTokens,
-    modelUsed: res1.model
-  });
-  await logAIReasoning({
-    sys: sys1,
-    user: pmName,
-    thoughts: res1.thoughts,
-    answer: res1.answer,
-    cloudfunction: cfName,
-    productId,
-    materialId,
-    rawConversation: res1.rawConversation
-  });
-
-  if (urls1.size > 0) {
-    await saveURLs({
-      urls: Array.from(urls1),
-      productId,
-      materialId,
-      cloudfunction: cfName
-    });
+    //
+    //
+    //
+    //
+    //
+    includeThoughts: true,
+    thinkingLevel: "HIGH"
   }
+};
 
-  // --- Step 2: Second AI Call (Fact Check) ---
-  const sys2 = `Your job is to take in a product name and a description of the product. You must fact check the description and create a new description where necessary.
+const urls1 = new Set();
+const res1 = await runGeminiStream({
+  model,
+  generationConfig: config1,
+  user: pmName,
+  collectedUrls: urls1
+});
+
+const descriptionOriginalRaw = res1.answer.trim();
+const descMatch1 = descriptionOriginalRaw.match(/.*/);
+const descriptionOriginal = descMatch1 ? descMatch1[1].trim() : descriptionOriginalRaw;
+
+await logAITransaction({
+  cfName,
+  productId,
+  materialId,
+  cost: res1.cost,
+  totalTokens: res1.totalTokens,
+  modelUsed: res1.model
+});
+await logAIReasoning({
+  sys: sys1,
+  user: pmName,
+  thoughts: res1.thoughts,
+  answer: res1.answer,
+  cloudfunction: cfName,
+  productId,
+  materialId,
+  rawConversation: res1.rawConversation
+});
+
+if (urls1.size > 0) {
+  await saveURLs({
+    urls: Array.from(urls1),
+    productId,
+    materialId,
+    cloudfunction: cfName
+  });
+}
+
+// --- Step 2: Second AI Call (Fact Check) ---
+const sys2 = `Your job is to take in a product name and a description of the product. You must fact check the description and create a new description where necessary.
 
 !! You MUST use your google search and url context tools to ground your answer on the most up to date information. !!
 
@@ -607,71 +607,71 @@ Output your answer in the exact following format and no other text:
 *description: [Set to "..." if the description passed. If the description didnt pass, output the complete new description here.]
 "`;
 
-  const prompt2 = "...";
+const prompt2 = "...";
 
-  const config2 = {
-//
-//
-//
-//
-//
-      includeThoughts: true,
-      thinkingLevel: "HIGH"
-    }
+const config2 = {
+  //
+  //
+  //
+  //
+  //
+  includeThoughts: true,
+  thinkingLevel: "HIGH"
+}
   };
 
-  const urls2 = new Set();
-  const res2 = await runGeminiStream({
-    model,
-    generationConfig: config2,
-    user: prompt2,
-    collectedUrls: urls2
-  });
+const urls2 = new Set();
+const res2 = await runGeminiStream({
+  model,
+  generationConfig: config2,
+  user: prompt2,
+  collectedUrls: urls2
+});
 
-  await logAITransaction({
-    cfName,
+await logAITransaction({
+  cfName,
+  productId,
+  materialId,
+  cost: res2.cost,
+  totalTokens: res2.totalTokens,
+  modelUsed: res2.model
+});
+await logAIReasoning({
+  sys: sys2,
+  user: prompt2,
+  thoughts: res2.thoughts,
+  answer: res2.answer,
+  cloudfunction: cfName,
+  productId,
+  materialId,
+  rawConversation: res2.rawConversation
+});
+
+if (urls2.size > 0) {
+  await saveURLs({
+    urls: Array.from(urls2),
     productId,
     materialId,
-    cost: res2.cost,
-    totalTokens: res2.totalTokens,
-    modelUsed: res2.model
+    cloudfunction: cfName
   });
-  await logAIReasoning({
-    sys: sys2,
-    user: prompt2,
-    thoughts: res2.thoughts,
-    answer: res2.answer,
-    cloudfunction: cfName,
-    productId,
-    materialId,
-    rawConversation: res2.rawConversation
-  });
+}
 
-  if (urls2.size > 0) {
-    await saveURLs({
-      urls: Array.from(urls2),
-      productId,
-      materialId,
-      cloudfunction: cfName
-    });
-  }
+const ai2Answer = res2.answer.trim();
+const passMatch = ai2Answer.match(/.*/);
+const passOrFail = passMatch ? passMatch[1].trim() : "Fail";
 
-  const ai2Answer = res2.answer.trim();
-  const passMatch = ai2Answer.match(/.*/);
-  const passOrFail = passMatch ? passMatch[1].trim() : "Fail";
+const descMatch2 = ai2Answer.match(/.*/);
+const descriptionNew = descMatch2 ? descMatch2[1].trim() : "...";
 
-  const descMatch2 = ai2Answer.match(/.*/);
-  const descriptionNew = descMatch2 ? descMatch2[1].trim() : "...";
+let descriptionToAppend = (passOrFail === "Pass") ? descriptionOriginal : descriptionNew;
 
-  let descriptionToAppend = (passOrFail === "Pass") ? descriptionOriginal : descriptionNew;
+const currentDescription = pmDocData.description || "";
+let finalDescription = (!currentDescription || currentDescription.trim() === "")
+  ? descriptionToAppend
+  : `${currentDescription}\n\n-----\n\n${descriptionToAppend}`;
 
-  const currentDescription = pmDocData.description || "";
-  let finalDescription = (!currentDescription || currentDescription.trim() === "")
-    ? descriptionToAppend
-    : `${currentDescription}\n\n-----\n\n${descriptionToAppend}`;
-
-  await pmDocRef.update({ description: finalDescription });
-  logger.info(`[productDescription] Successfully updated description for ${pmDocRef.path}. PassOrFail: ${passOrFail}`);
+await pmDocRef.update({ description: finalDescription });
+logger.info(`[productDescription] Successfully updated description for ${pmDocRef.path}. PassOrFail: ${passOrFail}`);
 }
 
 async function callCF(name, body) {

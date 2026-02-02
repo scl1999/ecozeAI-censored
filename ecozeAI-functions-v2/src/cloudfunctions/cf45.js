@@ -1,30 +1,6 @@
-const { admin, db, logger, onRequest, onMessagePublished, onSchedule, onDocumentCreated, fetch, discoveryEngineClient, tasksClient, pubSubClient } = require('../../config/firebase');
-const { REGION, TIMEOUT, MEM, SECRETS, VERTEX_REDIRECT_RE, INTERACTIONS_API_BASE } = require('../../config/constants');
-const { getGeminiClient, runGeminiStream, runOpenModelStream, logFullConversation } = require('../../services/ai/gemini');
-const { logAITransaction, logAIReasoning, logAITransactionAgent, logAIReasoningWorkItem, logAIReasoningSingle, logAIReasoningBatch, logAIReasoningFinal, logAIReasoningSimple, logAITransactionSimple } = require('../../services/ai/costs');
-const { isValidUrl, unwrapVertexRedirect, saveURLs, extractUrlsFromInteraction, harvestUrls, harvestUrlsFromText, generateReasoningString } = require('../../services/ai/urls');
-const { createInteraction, getInteraction, parseNDJSON } = require('../../services/ai/interactionsapi');
-const { runAIChat, runAIDeepResearch, runPromisesInParallelWithRetry, productDescription, callCF } = require('../../services/ai/aimain');
-const { sleep, getFormattedDate } = require('../../utils/time');
-const { runWithRetry, runWithRetryI } = require('../../utils/network');
-const { parseCFValue, parseNDJSON: parseNDJSONUtil, parseBoM, parseBoMTable, parseBoMTableLegacy, getStepLabel, getFormattedDate: getFormattedDateUtil } = require('../../utils/formatting');
-const prompts = require('../../services/ai/prompts');
-const { 
-  DUPLICATE_SYS, BOM_SYS, BOM_SYS_TIER_N, GO_AGAIN_PROMPT, TAG_GENERATION_SYS, 
-  SYS_APCFSF, SYS_MSG_APCFSF, VERIFY_SYS_MSG, SYS_MSG_MPCFFULL_PRO, 
-  SYS_MSG_MPCFFULL_CORE, REASONING_SUMMARIZER_SYS_2, MPCFFULL_PRODUCTS_SYS, 
-  MPCFFULLNEW_TAG_GENERATION_SYS 
-} = prompts;
-
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-
-// --- Interactions API Helpers (Updated for Streaming) ---
-
-
-
-//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+const { admin, db, logger, onRequest, fetch } = require('../../config/firebase');
+//const { admin, db, logger, ...} = require('../../config/firebase');
+//...
 
 exports.cf45 = onRequest({
   region: REGION,
