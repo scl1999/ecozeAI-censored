@@ -5,10 +5,10 @@ Stack: Node.js, Python, Google Cloud Platform (GCP), Vertex AI, OpenAI, Firebase
 Overview
 This repository contains a sanitised snapshot of the core architecture behind ecozeAI, an autonomous supply chain analysis engine.
 
-Unlike standard "chatbot" wrappers, this system is a headless, event-driven agentic infrastructure designed to perform "Deep Research" tasks without human intervention. It currently powers sustainability audits for enterprise clients, automating the creation of ISO-compliant Product Carbon Footprints (PCFs).
+Unlike standard chatbot wrappers, this system is a headless, event-driven agentic infrastructure designed to perform Deep Research & Analytics tasks without human intervention. It currently powers sustainability audits for enterprise clients, automating the creation of ISO-compliant Product Carbon Footprints (PCFs).
 
 What This Code Demonstrates
-This codebase is an example of "Production-Grade AI". It solves the hard problems that stop AI demos from becoming enterprise products:
+This codebase is an example of Production-Grade AI. It solves the hard problems that stop AI demos from becoming enterprise products:
 
 Self-Healing Resilience: It doesn't crash when APIs fail. Custom retry logic with exponential backoff handles rate limits (429) and service outages (500) gracefully.
 Cost Governance (FinOps): It tracks token usage in real-time. The system utilises Model Cascading—dynamically downgrading from expensive reasoning models to faster models based on task complexity to protect margins.
@@ -18,19 +18,19 @@ Polyglot Architecture: Demonstrates orchestration in Node.js (for scalable, serv
 Repository Structure
 
 File	Description
-The Node.js/GCP Cloud Functions backend. Handles the "Master Agent" logic, Cloud Task queueing, Firestore state management, and the multi-turn chat loops that drive the research process.
+The Node.js/GCP Cloud Functions backend. Handles the Master Agent logic, Cloud Task queueing, Firestore state management, and the multi-turn chat loops that drive the research process.
 deep_research_agent.py	The Python Specialist Agent. A focused reasoning agent demonstrating advanced prompt engineering, structured output parsing, and specific data analysis tasks best suited for the Python ecosystem.
 
 -----
 
 Key Architectural Patterns
 
-1. The "Deep Research" Loop (orchestrator.js)
-The system uses a recursive function calling loop to navigate the web. It doesn't just "search"; it plans, executes, reads, and refines.
+1. The Deep Research Loop (orchestrator.js)
+The system uses a recursive function calling loop to navigate the web. It searches, plans, executes, reads, and refines.
 
 See: apcfSupplierFinder (Deep Research Agent).
 See: runGeminiStreamBrowserUse (The orchestration loop).
-Logic: It autonomously navigates URLs, parses unstructured PDFs (via Tika), and cross-references data against a "Fact Check" agent before committing to the database.
+Logic: It autonomously navigates URLs, parses unstructured PDFs (via Tika), and cross-references data against a Fact Check agent before committing to the database.
 
 -----
 
@@ -42,8 +42,8 @@ Logic: Every interaction is logged with exact input/output token costs. If a tas
 
 -----
 
-3. The "Hallucination Firewall"
+3. The Hallucination Firewall
 To serve enterprise clients, "truth" is non-negotiable.
 
 See: annotateAndCollectSources and saveURLs.
-Logic: The AI is forced to cite its sources. A secondary "Reviewer Agent" parses the citations to ensure the URL actually contains the claimed data. If the URL is dead or irrelevant, the fact is discarded.
+Logic: The AI is forced to cite its sources. A secondary Reviewer Agent parses the citations to ensure the URL actually contains the claimed data. If the URL is dead or irrelevant, the fact is discarded.
