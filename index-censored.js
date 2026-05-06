@@ -1,4 +1,27 @@
-// CompanyX Cloud Functions v2
+// ecozeAI Cloud Functions v2
+//
+// ****************************************************************************************
+// *  COPYRIGHT (C) 2025 ECOZE LTD. ALL RIGHTS RESERVED.
+// *
+// *  CONFIDENTIAL AND PROPRIETARY INFORMATION
+// *
+// *  The intellectual and technical concepts contained herein are proprietary to
+// *  ECOZE Ltd and are protected by trade secret and copyright laws
+// *  of the United Kingdom and other international jurisdictions.
+// *
+// *  Any unauthorized use, reproduction, dissemination, distribution, reverse 
+// *  engineering, or modification of this material, in whole or in part, without 
+// *  the prior written permission of ECOZE Ltd is strictly prohibited and 
+// *  constitutes a violation of applicable laws.
+// *
+// *  THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// *  FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
+// *  THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// *  THE SOFTWARE.
+// ****************************************************************************************
 
 /****************************************************************************************
  * 0.  String Field Value Options $$$
